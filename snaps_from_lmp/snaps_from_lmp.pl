@@ -41,7 +41,6 @@ while ( my $line = <$in> ) {
 	foreach ( @snap ) {
 		printf $out "$qatom @{$_}[2] @{$_}[3] @{$_}[4] \n";
 	}
-	die;
 }
 
 
