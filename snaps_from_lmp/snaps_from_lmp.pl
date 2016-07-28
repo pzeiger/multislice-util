@@ -12,6 +12,11 @@ use warnings;
 my $filein = $ARGV[0];
 my $qatom = $ARGV[1];
 
+print "Preparing snapshots\n";
+print "INPUT: $filein\n";
+print "ATOMICNUM $qatom\n";
+
+
 open my $in, '<', $filein;
 
 # Read all lammps atom data output for a time step & convert to multislice snapshot 
