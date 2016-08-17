@@ -107,7 +107,7 @@ for my $j ( 0 .. $#filein ) {
 			
 			for my $ix ( 1 .. $#avgint ) {
 				for my $iy ( 1 .. $#{$avgint[$ix]} ) {
-					printf $out "%4i %4i %1.12e %1.12e %1.12e\n", ($ix, $iy, ($avgint[$ix][$iy]/($#filein+1)), (sqrt($stddev[$ix][$iy]/($#filein))), (sqrt($stddev[$ix][$iy]/(($#filein)*($#filein+1)))));
+					printf $out "%4i %4i %1.12e %1.12e %1.12e\n", ($ix, $iy, ($avgint[$ix][$iy]/($j+1)), (sqrt($stddev[$ix][$iy]/($j))), (sqrt($stddev[$ix][$iy]/(($j)*($j+1)))));
 				}
 				printf $out "\n";
 			}
@@ -122,7 +122,7 @@ my @stddev = ();
 for my $j ( 0 .. $#filein ) {
 	for my $ix  ( 1 .. $#avgint ) {
 		for my $iy ( 1 .. $#{$avgint[$ix]} ) {
-			$stddev[$ix][$iy] += ($int[$j][$ix][$iy] - ($avgint[$ix][$iy]/($j+1)))**2;
+			$stddev[$ix][$iy] += ($int[$j][$ix][$iy] - ($avgint[$ix][$iy]/($#filein+1)))**2;
 		}
 	}
 }
