@@ -5,18 +5,38 @@
 # and outputs timestep vs msd 
 
 
-use strict;
-use warnings;
+#use strict;
+#use warnings;
 
-# Number of lines containing environment information per time step in lammps output
-my $nlmphead = 8;
+print "$ARGV[0] $ARGV[1] $ARGV[2] $ARGV[3] $ARGV[4] $ARGV[5]\n";
 
 
 my $filein = $ARGV[0];
+open my $in, '<', $filein;
+
+# Charge of atom
 my $qatom = $ARGV[1];
 
-# turn the center of mass (com) translation correction on (1) or off (all other values)
-my $trlcorr = $ARGV[2];
+
+# Specify the input format. Currently supported are "MD" and "xyz"
+# Variable $nlmphead specifies the numebr of lines containing 
+# environment information (non-position information) per time step
+# in lammps output
+
+my $formatin = $ARGV[2];
+my $nlmphead = 0;
+if ( $formatin =~ /MD/ ) {
+	$nlmphead = 8;
+	print "Input file format is MD\n";
+}
+elsif ( $formatin =~ /xyz/ ) {
+	$nlmphead = 2;
+	print "Input file format is xyz\n";
+}
+
+
+# Turn the center of mass (com) translation correction on (1) or off (all other values)
+my $trlcorr = $ARGV[3];
 if ( $trlcorr == 1 ) {
 	print "COM translation correction turned on\n";
 }
@@ -25,15 +45,15 @@ else {
 	print "COM translation correction turned off\n";
 }
 
-# Enable COM correction in PIMD simulations
-my $mode = $ARGV[3];
+
+# Enable COM correction in PIMD simulation output
+my $mode = $ARGV[4];
 my $centroidfile;
 if ( $mode =~ /pimd/ ) {
 	print "Operating in PIMD mode\n";
-	$centroidfile = $ARGV[4];
+	$centroidfile = $ARGV[5];
 }
 
-open my $in, '<', $filein;
 my $centroidin;
 if ( $mode =~ /pimd/ ) {
 	open $centroidin, '<', $centroidfile;
@@ -44,9 +64,8 @@ if ( $mode =~ /pimd/ ) {
 # input file if not extra file ($ARGV[2]) is specified 
 
 my $line = <$in>;
-my ($tstep0, $natom0, $coord0, $snap0, $dim0, $ixyz0) = readTimestepData($in,$line,$nlmphead);
+my ($tstep0, $natom0, $snap0, $dim0, $ixyz0) = readTimestepData($in,$line,$nlmphead,$formatin);
 
-my @coord0 = @$coord0;
 my @snap0 = @$snap0;
 my @dim0 = @$dim0;
 my @ixyz0 = @$ixyz0;
@@ -57,13 +76,15 @@ my $centroid;
 
 if ( $mode =~ /pimd/ && $trlcorr == 1 ) {
 	my $line = <$centroidin>;
-	(my $tstep, my $natom, my $coord, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nlmphead);
+	
+	(my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepDataMD($centroidin,$line,$nlmphead,$formatin);
 	
 	@centroid = @$centroid;
 	
 	print "@{$centroid[1]}\n";
 	print "$centroid\n";
 }
+
 
 # determine center of mass of the crystal structure
 my @com0;
@@ -75,7 +96,6 @@ else {
 }
 
 print "CENTRE OF MASS: @com0\n";
-print "COORDINATES: @coord0\n";
 
 if ( $mode !~ /pimd/ ) {
 	my $fileout = "snapshot" . $tstep0;
@@ -101,9 +121,8 @@ else {
 
 # Print all other snapshots to multislice input files
 while ( my $line = <$in> ) {
-	my ($tstep, $natom, $coord, $snap, $dim, $ixyz) = readTimestepData($in,$line,$nlmphead);
+	my ($tstep, $natom, $snap, $dim, $ixyz) = readTimestepData($in,$line,$nlmphead,$formatin);
 	
-	my @coord = @$coord;
 	my @snap = @$snap;
 	my @dim = @$dim;
 	
@@ -115,9 +134,11 @@ while ( my $line = <$in> ) {
 	# due to periodic boundary conditions
 	foreach my $i ( 0 .. $#snap ) {
 		foreach my $j ( $ixyz[0] .. $ixyz[2] ) {
-#			print "$i $j $snap[$i][$j]\n";
-#			print "$j @{$snap[$i]}\n";
+#			print "@ixyz\n";
+#			print "$i $j $snap[$i][$j]-$snap0[$i][$j]\n";
 			my $disp = $snap[$i][$j] - $snap0[$i][$j];
+#			print "$i $j =  $disp\n";
+			
 			if ($disp > 0.5) {
 				$snap[$i][$j] -= 1;
 			}
@@ -127,11 +148,10 @@ while ( my $line = <$in> ) {
 		}
 	}
 	
-	
 	# In PIMD mode read centroid positions
 	if ( $mode =~ /pimd/ ) {
 		my $line = <$centroidin>;
-		(my $tstep, my $natom, my $coord, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nlmphead);
+		(my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nlmphead,$formatin);
 		@centroid = @$centroid;
 		
 		print "@{$centroid[1]}\n";
@@ -145,7 +165,7 @@ while ( my $line = <$in> ) {
 		else {
 		    @com = determineCOM($centroid,$natom,$ixyz);
 	}
-
+	
 	if ($trlcorr == 1) {
 		foreach my $d ( 0 .. $#com ) {
 			push @comcorr, ( $com[$d] - $com0[$d] );
@@ -166,6 +186,7 @@ while ( my $line = <$in> ) {
 	
 	printf $out "%f %f %f\n", @dim;
 	printf $out "%i F\n", $natom;
+	
 	foreach ( @snap ) {
 		@{$_}[$ixyz[0]] -= $comcorr[0];
 		@{$_}[$ixyz[1]] -= $comcorr[1];
@@ -181,110 +202,174 @@ while ( my $line = <$in> ) {
 		
 		printf $out "$qatom @{$_}[$ixyz[0]] @{$_}[$ixyz[1]] @{$_}[$ixyz[2]] \n";
 	}
+	die;
 }
 
 
+
+
 # subroutine that reads data for 1 time step from a LAMMPS dump file formatted as:
-# ------BEGIN FILE------
-# ITEM: TIMESTEP
-# 0
-# ITEM: NUMBER OF ATOMS
-# 34680
-# 0.0  62.426 xlo xhi
-# 0.0  61.271 ylo yhi
-# 0.0 300.165 zlo zhi
-# ITEM: ATOMS id type xs ys zs
-# 1 1 0.0000000 0.0000000 0.0000000
-# 2 1 0.0333333 0.0000000 0.0098039
-# ------END FILE ------
 # 
-# takes 3 arguments. Current input line $line, input file identifier $in and number
-# of lines $nhead composing the header
+# 1. MD file
+#	------BEGIN FILE------
+#	ITEM: TIMESTEP
+#	0
+# 	ITEM: NUMBER OF ATOMS
+#	34680
+#	0.0  62.426 xlo xhi
+#	0.0  61.271 ylo yhi
+#	0.0 300.165 zlo zhi
+#	ITEM: ATOMS id type xs ys zs
+#	1 1 0.0000000 0.0000000 0.0000000
+#	2 1 0.0333333 0.0000000 0.0098039
+#	...
+#	------END FILE ------
+#
+#
+# 2. xyz file
+#	------BEGIN FILE------
+#	34680
+#	# CELL(abcABC):  117.96804   115.78541   567.22963    90.00000    90.00000    90.00000  cell{atomic_unit}  Traj: positions{atomic_unit} Step:           0  Bead:       0 
+#	Gd  0.00000e+00  0.00000e+00  0.00000e+00
+#	Gd  3.93252e+00  0.00000e+00  5.56146e+00
+#	...
+#	------END FILE ------
+#	
+#	
+# takes 4 arguments. Current input line $line, input file identifier $in, number
+# of lines $nhead composing the header, and the input file format (currently .xyz, .MD) --> see examples
+
 
 sub readTimestepData {
 	my $in = $_[0];
 	my $line = $_[1];
 	my $nlmphead = $_[2];
+	my $formatin = $_[3];
 	
-	chomp($line);
-	my @head = ($line);
 	
-	foreach (1 .. $nlmphead) {
-		$line = <$in>;
-		chomp($line);
-		push @head, $line;
-	}
-	
-	# 2nd line of the header contains time step info;
-	# 3rd line the number of atoms
-	my $tstep = $head[1];
-	my $natom = $head[3];
 	# arrays for unit cell dimensions, atom data and temporary auxiliary purposes
-	my @dim	= ();
+	my $tstep, $natom, $id;
+	my @dim = ();
 	my @snap = ();
 	my %data;
 	
 	my @ixyz = ();
 	my $id;
-	my @coord;
 	
-	my @tmp = split ' ', $head[$nlmphead];
 	
-	foreach my $i ( 0 .. $#tmp ) {
-		if ( $tmp[$i] =~ /id/ ) {
-			$id = $i;
-		}
-	}
+	# Read header
+	chomp($line);
+	my @head = ($line);
 	
-	foreach my $i ( 0 .. $#tmp ) {
-		if ( $tmp[$i] =~ /xs/ ) {
-			$ixyz[0] = $i - $id;
-			$coord[0] = "F";
-		}
-		if ( $tmp[$i] =~ /^x$/ ) {
-			$ixyz[0] = $i - $id;
-			$coord[0] = "R";
-		}
-		if ( $tmp[$i] =~ /ys/ ) {
-			$ixyz[1] = $i - $id;
-			$coord[1] = "F";
-		}
-		if ( $tmp[$i] =~ /^y$/ ) {
-			$ixyz[1] = $i - $id;
-			$coord[1] = "R";
-		}
-		if ( $tmp[$i] =~ /zs/ ) {
-			$ixyz[2] = $i - $id;
-			$coord[2] = "F";
-		}
-		if ( $tmp[$i] =~ /^z$/ ) {
-			$ixyz[2] = $i - $id;
-			$coord[2] = "R";
-		}
-	}
-	
-	foreach my $i ( ($nlmphead-3) .. ($nlmphead-1) ) {
-		@tmp = split ' ', $head[$i];
-		push @dim, ( $tmp[1] - $tmp[0] );
-	}
-	
-	foreach ( 0 .. $natom - 1 ) {
+	foreach (1 .. $nlmphead-1) {
 		$line = <$in>;
 		chomp($line);
-		@tmp = split ' ', $line;
-		
-		$data{$tmp[0]} = $line;
+		push @head, [split ' ', $line];
 	}
 	
-	foreach my $id (1 .. $natom) {
-		@tmp = split ' ', $data{$id};
-		push @snap, [ @tmp ];
+	if ( $formatin =~ /MD/ ) {
+		
+		# 2nd line of the header contains time step info;
+		# 3rd line the number of atoms
+		$tstep = $head[1];
+		$natom = $head[3];
+		
+		my @tmp = split ' ', $head[$nlmphead];
+		
+		foreach my $i ( 0 .. $#tmp ) {
+			if ( $tmp[$i] =~ /id/ ) {
+				$id = $i;
+			}
+		}
+		
+		foreach my $i ( 0 .. $#tmp ) {
+			if ( $tmp[$i] =~ /xs/ ) {
+				$ixyz[0] = $i - $id;
+			}
+			if ( $tmp[$i] =~ /^x$/ ) {
+				$ixyz[0] = $i - $id;
+			}
+			if ( $tmp[$i] =~ /ys/ ) {
+				$ixyz[1] = $i - $id;
+			}
+			if ( $tmp[$i] =~ /^y$/ ) {
+				$ixyz[1] = $i - $id;
+			}
+			if ( $tmp[$i] =~ /zs/ ) {
+				$ixyz[2] = $i - $id;
+			}
+			if ( $tmp[$i] =~ /^z$/ ) {
+				$ixyz[2] = $i - $id;
+			}
+		}
+		
+		foreach my $i ( ($nlmphead-3) .. ($nlmphead-1) ) {
+			@tmp = split ' ', $head[$i];
+			push @dim, ( $tmp[1] - $tmp[0] );
+		}
+		
+		foreach ( 1 .. $natom-1 ) {
+			$line = <$in>;
+			chomp($line);
+			@tmp = split ' ', $line;
+			$data{$tmp[0]} = $line;
+		}
+		
+		foreach my $id (1 .. $natom) {
+			@tmp = split ' ', $data{$id};
+			push @snap, [ @tmp ]; 
+		}
 	}
+	elsif ( $formatin =~ /xyz/ ) {
+		$natom = $head[0];
+		@dim = ($head[1][2], $head[1][3], $head[1][4]);
+		$tstep = $head[1][12];
+		
+		foreach (1 .. $natom) {
+			$line = <$in>;
+	        chomp($line);
+			push @snap, [split ' ', $line];
+		}
+
+		# 2nd, 3rd, and 4th column contain the x-, y- and z-positions
+		@ixyz = (1, 2, 3);
+	}
+	
+	# Convert all positions to fractional coordinates
+	my $fractional = 1;
+	foreach (@snap) {
+		if ( abs($_[$ixy[0]]) - 1 > 0 ) {
+			print "Non-fractional coordinates detected, converting to fractional\n";
+			$fractional = 0;
+			last;
+		}
+		elsif ( abs($_[$ixy[1]]) - 1 > 0 ) {
+			print "Non-fractional coordinates detected, converting to fractional\n";
+			$fractional = 0;
+			last;
+		}
+		elsif ( abs($_[$ixy[2]]) - 1 > 0 ) {
+			print "Non-fractional coordinates detected, converting to fractional\n";
+			$fractional = 0;
+			last;
+		}
+	}
+	
+	if ($fractional != 1) {
+		for my $i (1 .. $natom) {
+			$snap[$i][$ixyz[0]] /= $dim[0];
+			$snap[$i][$ixyz[1]] /= $dim[1];
+			$snap[$i][$ixyz[2]] /= $dim[2];
+		}
+	}
+	print "$snap[2][1]\n";
 	
 	# \@ creates a reference to the array -> see:
 	# http://perlmeme.org/faqs/perl_thinking/returning.html
-	return($tstep, $natom, \@coord, \@snap, \@dim, \@ixyz);
+	return($tstep, $natom, \@snap, \@dim, \@ixyz);
 }
+
+
 
 
 # determine center of mass of a given snapshot
@@ -314,5 +399,4 @@ sub determineCOM {
 	
 	return (@com);
 }
-
 
