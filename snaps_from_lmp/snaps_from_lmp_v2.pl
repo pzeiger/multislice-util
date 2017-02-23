@@ -202,7 +202,6 @@ while ( my $line = <$in> ) {
 		
 		printf $out "$qatom @{$_}[$ixyz[0]] @{$_}[$ixyz[1]] @{$_}[$ixyz[2]] \n";
 	}
-	die;
 }
 
 
@@ -362,7 +361,6 @@ sub readTimestepData {
 			$snap[$i][$ixyz[2]] /= $dim[2];
 		}
 	}
-	print "$snap[2][1]\n";
 	
 	# \@ creates a reference to the array -> see:
 	# http://perlmeme.org/faqs/perl_thinking/returning.html
