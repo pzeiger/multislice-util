@@ -35,8 +35,12 @@ elsif ( $formatin =~ /xyz/ ) {
 }
 
 
+# Specify the unit of lenght in the input file. Currently supported are "angstrom" and "bohr"
+my $lengthunit = $ARGV[3];
+
+
 # Turn the center of mass (com) translation correction on (1) or off (all other values)
-my $trlcorr = $ARGV[3];
+my $trlcorr = $ARGV[4];
 if ( $trlcorr == 1 ) {
 	print "COM translation correction turned on\n";
 }
@@ -47,11 +51,11 @@ else {
 
 
 # Enable COM correction in PIMD simulation output
-my $mode = $ARGV[4];
+my $mode = $ARGV[5];
 my $centroidfile;
 if ( $mode =~ /pimd/ ) {
 	print "Operating in PIMD mode\n";
-	$centroidfile = $ARGV[5];
+	$centroidfile = $ARGV[6];
 }
 
 my $centroidin;
@@ -64,7 +68,7 @@ if ( $mode =~ /pimd/ ) {
 # input file if not extra file ($ARGV[2]) is specified 
 
 my $line = <$in>;
-my ($tstep0, $natom0, $snap0, $dim0, $ixyz0) = readTimestepData($in,$line,$nlmphead,$formatin);
+my ($tstep0, $natom0, $snap0, $dim0, $ixyz0) = readTimestepData($in,$line,$nlmphead,$formatin,$lengthunit);
 
 my @snap0 = @$snap0;
 my @dim0 = @$dim0;
@@ -77,7 +81,7 @@ my $centroid;
 if ( $mode =~ /pimd/ && $trlcorr == 1 ) {
 	my $line = <$centroidin>;
 	
-	(my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepDataMD($centroidin,$line,$nlmphead,$formatin);
+	(my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepDataMD($centroidin,$line,$nlmphead,$formatin,$lengthunit);
 	
 	@centroid = @$centroid;
 	
@@ -121,7 +125,7 @@ else {
 
 # Print all other snapshots to multislice input files
 while ( my $line = <$in> ) {
-	my ($tstep, $natom, $snap, $dim, $ixyz) = readTimestepData($in,$line,$nlmphead,$formatin);
+	my ($tstep, $natom, $snap, $dim, $ixyz) = readTimestepData($in,$line,$nlmphead,$formatin,$lengthunit);
 	
 	my @snap = @$snap;
 	my @dim = @$dim;
@@ -151,7 +155,7 @@ while ( my $line = <$in> ) {
 	# In PIMD mode read centroid positions
 	if ( $mode =~ /pimd/ ) {
 		my $line = <$centroidin>;
-		(my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nlmphead,$formatin);
+		(my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nlmphead,$formatin,$lengthunit);
 		@centroid = @$centroid;
 		
 		print "@{$centroid[1]}\n";
@@ -244,6 +248,7 @@ sub readTimestepData {
 	my $line = $_[1];
 	my $nlmphead = $_[2];
 	my $formatin = $_[3];
+	my $lengthunit = $_[4];
 	
 	
 	# arrays for unit cell dimensions, atom data and temporary auxiliary purposes
@@ -362,6 +367,21 @@ sub readTimestepData {
 		}
 	}
 	
+	# Convert cell dimension to Angstroms
+	if ($lengthunit =~ /angstrom/) {
+		print "Unit of length is $lengthunit\n";
+	}
+	elsif ($lengthunit =~ /bohr/) {
+		print "Unit of length is $lengthunit... Converting to angstrom\n";
+		$dim[0] *= 0.529;
+		$dim[1] *= 0.529;
+		$dim[2] *= 0.529;
+	}
+	else {
+		print "Unsupported unit. Terminating....\n";
+		die;
+	}
+
 	# \@ creates a reference to the array -> see:
 	# http://perlmeme.org/faqs/perl_thinking/returning.html
 	return($tstep, $natom, \@snap, \@dim, \@ixyz);
