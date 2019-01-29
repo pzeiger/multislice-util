@@ -50,7 +50,7 @@ for my $j ( 0 .. $#filein ) {
 	my @inp = ();
 	my $ixmax = 0;
 	my $iymax = 0;
-
+	
 	open my $in, '<', $filein[$j]
 		or do{
 			warn "Could not open file '$filein[$j]' $!";
