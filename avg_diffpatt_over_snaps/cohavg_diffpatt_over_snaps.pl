@@ -41,8 +41,10 @@ foreach my $i ( 0 .. $#ARGV ) {
 }
 
 
-my @avgint = ();
-my @int = ();
+my @sumamp = ();
+my @sumsqamp = ();
+my $int;
+my $uncint;
 
 
 for my $j ( 0 .. $#filein ) {
@@ -78,27 +80,37 @@ for my $j ( 0 .. $#filein ) {
 			$ix = (( $ix - 1 + ($ixmax/2) ) % $ixmax) + 1;
 			$iy = (( $iy - 1 + ($iymax/2) ) % $iymax) + 1;
 		}
-			$avgint[$ix][$iy][1] += $inp[$index][3]
-			$avgint[$ix][$iy][2] += $inp[$index][4]
-#			$int[$j][$ix][$iy] = $inp[$index][3]*$inp[$index][3] + $inp[$index][4]*$inp[$index][4];
+			$sumamp[$ix][$iy][1] += $inp[$index][3];
+			$sumamp[$ix][$iy][2] += $inp[$index][4];
+			$sumsqamp[$ix][$iy][1] += $inp[$index][3]*$inp[$index][3];
+			$sumsqamp[$ix][$iy][2] += $inp[$index][4]*$inp[$index][4];
 	}
 	
 	foreach my $n ( @outevery ) {
-		if ( (( $j + 1 ) % $n) == 0 ) {
-#			my @stddev = ();
+		if ( (( $j + 1 ) % $n) == 0 or $j == $#filein ) {
+			my @uncert = ();
+			my $out;
 #			for my $i ( 0 .. $j ) {
-#				for my $ix  ( 1 .. $#avgint ) {
-#					for my $iy ( 1 .. $#{$avgint[$ix]} ) {
-#						$stddev[$ix][$iy] += ($int[$i][$ix][$iy] - ($avgint[$ix][$iy]/($j+1)))**2;
-#					}
-#				}
+			for my $ix  ( 1 .. $#sumamp ) {
+				for my $iy ( 1 .. $#{$sumamp[$ix]} ) {
+					$uncert[$ix][$iy][1] += sqrt(1/($j**2-$j)*($sumsqamp[$ix][$iy][1] - ($sumamp[$ix][$iy][1])**2/($j+1)));
+					$uncert[$ix][$iy][2] += sqrt(1/($j**2-$j)*($sumsqamp[$ix][$iy][2] - ($sumamp[$ix][$iy][2])**2/($j+1)));
+				}
+			}
 #			}
-			my $FILEOUT = "cohavg_diffpatt" . ($j+1);
-			open my $out, '>:encoding(UTF-8)', $FILEOUT;
+			if ( $j == $#filein ) {
+				my $FILEOUT = "cohavg_diffpatt" . ($#filein + 1) . "final";
+				open $out, '>:encoding(UTF-8)', $FILEOUT;
+			} else {
+				my $FILEOUT = "cohavg_diffpatt" . ($j+1);
+				open $out, '>:encoding(UTF-8)', $FILEOUT;
+			}
 			
-			for my $ix ( 1 .. $#avgint ) {
-				for my $iy ( 1 .. $#{$avgint[$ix]} ) {
-					printf $out "%4i %4i %1.12e %1.12e %1.12e\n", ($ix, $iy, ($avgint[$ix][$iy][1]*$avgint[$ix][$iy][1] + $avgint[$ix][$iy][2]*$avgint[$ix][$iy][2])/($j+1));
+			for my $ix ( 1 .. $#sumamp ) {
+				for my $iy ( 1 .. $#{$sumamp[$ix]} ) {
+					$int = ($sumamp[$ix][$iy][1]*$sumamp[$ix][$iy][1] + $sumamp[$ix][$iy][2]*$sumamp[$ix][$iy][2])/($j+1);
+					$uncint = sqrt(( 2*$sumamp[$ix][$iy][1]*$uncert[$ix][$iy][1] )**2 + ( 2*$sumamp[$ix][$iy][2]*$uncert[$ix][$iy][2] )**2) / ($j+1);
+					printf $out "%4i %4i %1.12e %1.12e\n", ($ix, $iy, $int, $uncint);
 				}
 				printf $out "\n";
 			}
@@ -106,28 +118,4 @@ for my $j ( 0 .. $#filein ) {
 		}
 	}
 }
-
-
-#my @stddev = ();
-#
-#for my $j ( 0 .. $#filein ) {
-#	for my $ix  ( 1 .. $#avgint ) {
-#		for my $iy ( 1 .. $#{$avgint[$ix]} ) {
-#			$stddev[$ix][$iy] += ($int[$j][$ix][$iy] - ($avgint[$ix][$iy]/($#filein+1)))**2;
-#		}
-#	}
-#}
-
-my $FILEOUT = "avg_diffpatt" . ($#filein + 1) . "final";
-
-open my $out, '>:encoding(UTF-8)', $FILEOUT;
-
-for my $ix ( 1 .. $#avgint ) {
-	for my $iy ( 1 .. $#{$avgint[$ix]} ) {
-		printf $out "%4i %4i %1.12e %1.12e %1.12e\n", ($ix, $iy, ($avgint[$ix][$iy][1]*$avgint[$ix][$iy][1] + $avgint[$ix][$iy][2]*$avgint[$ix][$iy][2])/($j+1));#, (sqrt($stddev[$ix][$iy]/($#filein))), (sqrt($stddev[$ix][$iy]/(($#filein)*($#filein+1)))));
-	}
-	printf $out "\n";
-}
-close ($out);
-
 
