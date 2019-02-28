@@ -2,6 +2,7 @@
 
 use strict;
 use warnings;
+use Data::Dumper;
 
 my %atomlist;
 my $atomstyle;
@@ -198,8 +199,12 @@ else {
 
 # Print all other snapshots to multislice input files
 while ( my $line = <$in> ) {
+    
     my ($tstep, $natom, $snap, $dim, $ixyz, $typecol) = readTimestepData($in,$line,$nlmphead,$formatin,$lengthunit,$setfractional,$atomstyle);
     
+    if (not $tstep) {
+        last; 
+    }
     my @snap = @$snap;
     my @dim = @$dim;
     
@@ -364,167 +369,178 @@ sub readTimestepData {
     
     # Read header
     chomp($line);
-    $head{0} = $line;
-    
-    
-    if ( $formatin =~ /MD/ ) {
-        foreach my $i (1 .. $nlmphead) {
-            $line = <$in>;
-            chomp($line);
-            $head{$i} = $line;
-#        print "$i $head{$i} \n";
-        }
+    if ($line ne '' ) {
+        $head{0} = $line;
         
-        # 1st line of the header contains time step info;
-        # 3rd line the number of atoms
-        $tstep = (split ' ', $head{1})[0];
-        $natom = (split ' ', $head{3})[0];
         
-        my @tmp = split ' ', $head{$nlmphead};
-        
-        # determine column number of id
-        foreach my $i (0 .. $#tmp) {
-            if ( $tmp[$i] =~ /id/ ) {
-                $idcol = $i;
-            }
-            if ( $tmp[$i] =~ /type/ ) {
-                $typecol = $i;
-            }
-        }
-        $typecol = $typecol - $idcol;
-        
-        foreach my $i (0 .. $#tmp ) {
-            if ( $tmp[$i] =~ /xs/ ) {
-                $ixyz[0] = $i - $idcol;
-            }
-            if ( $tmp[$i] =~ /^x$/ ) {
-                $ixyz[0] = $i - $idcol;
-            }
-            if ( $tmp[$i] =~ /ys/ ) {
-                $ixyz[1] = $i - $idcol;
-            }
-            if ( $tmp[$i] =~ /^y$/ ) {
-                $ixyz[1] = $i - $idcol;
-            }
-            if ( $tmp[$i] =~ /zs/ ) {
-                $ixyz[2] = $i - $idcol;
-            }
-            if ( $tmp[$i] =~ /^z$/ ) {
-                $ixyz[2] = $i - $idcol;
-            }
-        }
-        
-        foreach my $i ( ($nlmphead-3) .. ($nlmphead-1) ) {
-            my @tmp = split ' ', $head{$i};
-            push @dim, ( $tmp[1] - $tmp[0] );
-        }
-        
-        foreach ( 1 .. $natom ) {
-            $line = <$in>;
-            chomp($line);
-            @tmp = split ' ', $line;
-            $data{$tmp[0]} = $line;
-            push @snap, [ @tmp ];
-        }
-        
-    } elsif ( $formatin =~ /xyz/ ) {
-        
-        foreach my $i (1 .. $nlmphead) {
-            $line = <$in>;
-            chomp($line);
-            $head{$i} = $line;
-#        print "$i $head{$i} \n";
-        }
-        
-        $natom = (split ' ', $head{0})[0];
-        @dim = (split ' ',  $head{1})[2,3,4];
-        $tstep = (split ' ', $head{1})[12];
-        
-        foreach (1 .. $natom) {
-            $line = <$in>;
-            chomp($line);
-            push @snap, [split ' ', $line];
-        }
-        
-        # 2nd, 3rd, and 4th column contain the x-, y- and z-positions
-        @ixyz = (1, 2, 3);
-        
-    } elsif ( $formatin =~ /lmp/ ) {
-        my $i = 0;
-        while ($line = <$in>) {
-            chomp($line);
-            print "$line\n";
-            my @tmp = split ' ', $line;
-            if ( !@tmp ) {
-                next;
-            }
-           
-            if ( $tmp[0] =~ /[Aa]toms/ ) {
-                last;
-            } elsif ($tmp[0] =~ /[Mm]asses/ ) {
-                foreach (1 .. $head{'Ntypes'}) {
-                    $line = <$in>;
-                    chomp($line);
-                    my @tmp2 = split ' ', $line;
-                    $head{"mass$tmp[0]"} = $tmp[1];
-                }
-            } elsif ($tmp[1] =~ /[Aa]toms/ ) {
-                $head{'Natoms'} = $tmp[0];
-            } elsif ($tmp[1] =~ /[Aa]tom/ and $tmp[2] =~ /[Tt]ypes/) {
-                $head{'Ntypes'} = $tmp[0];
-            } elsif ($tmp[2] =~ /xlo/ and $tmp[3] =~ /xhi/ ) {
-                $head{'xlo'} = $tmp[0];
-                $head{'xhi'} = $tmp[1];
-            } elsif ($tmp[2] =~ /ylo/ and $tmp[3] =~ /yhi/ ) {
-                $head{'ylo'} = $tmp[0];
-                $head{'yhi'} = $tmp[1];
-            } elsif ($tmp[2] =~ /zlo/ and $tmp[3] =~ /zhi/ ) {
-                $head{'zlo'} = $tmp[0];
-                $head{'zhi'} = $tmp[1];
+        if ( $formatin =~ /MD/ ) {
+            foreach my $i (1 .. $nlmphead) {
+                $line = <$in>;
+                chomp($line);
+                $head{$i} = $line;
+#            print "$i $head{$i} \n";
             }
             
-            $i += 1;
+            # 1st line of the header contains time step info;
+            # 3rd line the number of atoms
+            $tstep = (split ' ', $head{1})[0];
+            $natom = (split ' ', $head{3})[0];
+            
+            my @tmp = split ' ', $head{$nlmphead};
+            
+            # determine column number of id
+            foreach my $i (0 .. $#tmp) {
+                if ( $tmp[$i] =~ /id/ ) {
+                    $idcol = $i;
+                }
+                if ( $tmp[$i] =~ /type/ ) {
+                    $typecol = $i;
+                }
+            }
+            $typecol = $typecol - $idcol;
+            
+            foreach my $i (0 .. $#tmp ) {
+                if ( $tmp[$i] =~ /xs/ ) {
+                    $ixyz[0] = $i - $idcol;
+                }
+                if ( $tmp[$i] =~ /^x$/ ) {
+                    $ixyz[0] = $i - $idcol;
+                }
+                if ( $tmp[$i] =~ /ys/ ) {
+                    $ixyz[1] = $i - $idcol;
+                }
+                if ( $tmp[$i] =~ /^y$/ ) {
+                    $ixyz[1] = $i - $idcol;
+                }
+                if ( $tmp[$i] =~ /zs/ ) {
+                    $ixyz[2] = $i - $idcol;
+                }
+                if ( $tmp[$i] =~ /^z$/ ) {
+                    $ixyz[2] = $i - $idcol;
+                }
+            }
+            
+            foreach my $i ( ($nlmphead-3) .. ($nlmphead-1) ) {
+                my @tmp = split ' ', $head{$i};
+                push @dim, ( $tmp[1] - $tmp[0] );
+            }
+            
+            foreach ( 1 .. $natom ) {
+                $line = <$in>;
+                chomp($line);
+                @tmp = split ' ', $line;
+                $data{$tmp[0]} = $line;
+                push @snap, [ @tmp ];
+            }
+            
+        } elsif ( $formatin =~ /xyz/ ) {
+            
+            foreach my $i (1 .. $nlmphead) {
+                $line = <$in>;
+                chomp($line);
+                $head{$i} = $line;
+#            print "$i $head{$i} \n";
+            }
+            
+            $natom = (split ' ', $head{0})[0];
+            @dim = (split ' ',  $head{1})[2,3,4];
+            $tstep = (split ' ', $head{1})[12];
+            
+            foreach (1 .. $natom) {
+                $line = <$in>;
+                chomp($line);
+                push @snap, [split ' ', $line];
+            }
+            
+            # 2nd, 3rd, and 4th column contain the x-, y- and z-positions
+            @ixyz = (1, 2, 3);
+            
+        } elsif ( $formatin =~ /lmp/ ) {
+            my $i = 0;
+            while ($line = <$in>) {
+                chomp($line);
+                print "$line\n";
+                my @tmp = split ' ', $line;
+                if ( !@tmp ) {
+                    next;
+                }
+                if ( $tmp[0] =~ /[Aa]toms/ ) {
+                    last;
+                } elsif ($tmp[0] =~ /[Mm]asses/ ) {
+                    $line = <$in>; # remove empty line
+                    foreach (1 .. $head{'Ntypes'}) {
+                        $line = <$in>;
+                        chomp($line);
+                        my @tmp2 = split ' ', $line;
+                        $head{"mass$tmp2[0]"} = $tmp2[1];
+                    }
+                } elsif ($tmp[1] =~ /[Aa]toms/ ) {
+                    $head{'Natoms'} = $tmp[0];
+                } elsif ($tmp[1] =~ /[Aa]tom/ and $tmp[2] =~ /[Tt]ypes/) {
+                    $head{'Ntypes'} = $tmp[0];
+                } elsif ($tmp[2] =~ /xlo/ and $tmp[3] =~ /xhi/ ) {
+                	print "$tmp[0]\n";
+                	print "$tmp[2]\n";
+                    $head{'xlo'} = $tmp[0];
+                    $head{'xhi'} = $tmp[1];
+            	print "$head{'xlo'}\n";
+                } elsif ($tmp[2] =~ /ylo/ and $tmp[3] =~ /yhi/ ) {
+                    $head{'ylo'} = $tmp[0];
+                    $head{'yhi'} = $tmp[1];
+            	print "$head{'xlo'}\n";
+                } elsif ($tmp[2] =~ /zlo/ and $tmp[3] =~ /zhi/ ) {
+                    $head{'zlo'} = $tmp[0];
+                    $head{'zhi'} = $tmp[1];
+            	print "$head{'xlo'}\n";
+                }
+                
+                $i += 1;
+            }
+            print Dumper(\%head);
+            print "$head{'xlo'}\n";
+            $natom = $head{'Natoms'};
+            print $head{'xhi'};
+            @dim = ( $head{'xhi'}-$head{'xlo'}, $head{'yhi'}-$head{'ylo'}, $head{'zhi'}-$head{'zlo'} );
+            $tstep = 0;
+            
+            $line = <$in>; # remove empty line
+            foreach (1 .. $natom) {
+                $line = <$in>;
+                chomp($line);
+                push @snap, [split ' ', $line];
+            }
+            
+            # 2nd, 3rd, and 4th column contain the x-, y- and z-positions
+            if ($atomstyle =~ /full/) {
+                $typecol = 2;
+                @ixyz = (4, 5, 6);
+            }
         }
-        $natom = $head{'Natoms'};
-        @dim = ( $head{'xhi'}-$head{'xlo'}, $head{'yhi'}-$head{'ylo'}, $head{'zhi'}-$head{'zlo'} );
-        $tstep = 0;
         
-        foreach (1 .. $natom) {
-            $line = <$in>;
-            chomp($line);
-            push @snap, [split ' ', $line];
+        # convert to fractional coordinates if necessary
+        if (not $fractional) {
+            for my $i (0 .. $natom-1) {
+                $snap[$i][$ixyz[0]] /= $dim[0];
+                $snap[$i][$ixyz[1]] /= $dim[1];
+                $snap[$i][$ixyz[2]] /= $dim[2];
+            }
         }
         
-        # 2nd, 3rd, and 4th column contain the x-, y- and z-positions
-        if ($atomstyle =~ /full/) {
-            $typecol = 2;
-            @ixyz = (4, 5, 6);
+        # Convert cell dimension to Angstroms
+        if ($lengthunit =~ /bohr/) {
+            print "Unit of length is $lengthunit... Converting to angstrom\n";
+            $dim[0] *= 0.5291772107;
+            $dim[1] *= 0.5291772107;
+            $dim[2] *= 0.5291772107;
+        }
+        elsif ($lengthunit ne "angstrom") {
+            print "Unsupported unit. Terminating....\n";
+            die;
         }
     }
-    
-    # convert to fractional coordinates if necessary
-    if (not $fractional) {
-        for my $i (0 .. $natom-1) {
-            $snap[$i][$ixyz[0]] /= $dim[0];
-            $snap[$i][$ixyz[1]] /= $dim[1];
-            $snap[$i][$ixyz[2]] /= $dim[2];
-        }
-    }
-    
-    # Convert cell dimension to Angstroms
-    if ($lengthunit =~ /bohr/) {
-        print "Unit of length is $lengthunit... Converting to angstrom\n";
-        $dim[0] *= 0.5291772107;
-        $dim[1] *= 0.5291772107;
-        $dim[2] *= 0.5291772107;
-    }
-    elsif ($lengthunit ne "angstrom") {
-        print "Unsupported unit. Terminating....\n";
-        die;
-    }
-    
+        
     # \@ creates a reference to the array -> see:
-    # http://perlmeme.org/faqs/perl_thinking/returning.html
+    # http://perlmeme.org/faqs/perl_thinking/returning.html	
     return($tstep, $natom, \@snap, \@dim, \@ixyz, $typecol);
 }
 
