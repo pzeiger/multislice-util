@@ -14,14 +14,19 @@ my $lengthunit = "angstrom";
 my $mode = "clmd";
 my $nlmphead = 8;
 my ($setin, $setatom) = (0, 0,);
-my $setfractional = 0;
+my $setfracin = 0;
+my $setfracout = 1;
+my $setsymout = 0;
 my $trlcorr = 0;
+my $atomtype;
+my @atomtypes;
 
 # Loop over arguments and place them into arrays and vars for further use
 foreach my $i ( 0 .. $#ARGV ) {
     
     # Specify LAMMPS atom type. Currently supported: "full" and "atomic"
     if ( $ARGV[$i] =~ /^-atomstyle$/ ) {
+        ($setin, $setatom) = (0, 0,);
         $atomstyle = $ARGV[$i+1];
         if ( $atomstyle ne "full" and $atomstyle ne "atomic" ) {
             print "atom style $atomstyle not recognized.\n";
@@ -39,11 +44,17 @@ foreach my $i ( 0 .. $#ARGV ) {
     # Match atom type from lammps with nuclear charge and atom style
     if ( $ARGV[$i] =~ /^-matchatom$/ ) {
         ($setin, $setatom) = (0, 1,);
+	if (defined $atomtype) {
+            $atomtype += 1;
+        } else {
+            $atomtype = 0;
+	}
         next;
     }
     
     # Specify the unit of lenght in the input file. Currently supported are "angstrom" and "bohr"
     if ( $ARGV[$i] =~ /^-lengthunit$/ ) {
+        ($setin, $setatom) = (0, 0,);
         $lengthunit = $ARGV[$i+1];
         if ($lengthunit eq "angstrom" or $lengthunit eq "bohr") {
             print "Unit of length is set to $lengthunit\n";
@@ -56,19 +67,36 @@ foreach my $i ( 0 .. $#ARGV ) {
     
     # input centroid file for COM correction in output of PIMD simulation
     if ( $ARGV[$i] =~ /^-fcentroid$/ ) {
+        ($setin, $setatom) = (0, 0,);
         $centroidfile = $ARGV[$i+1];
         next;
     }
-   
+    
     # Specify operation mode. Currently supported: "pimd" and "clmd"
     if ( $ARGV[$i] =~ /^-mode$/ ) {
+        ($setin, $setatom) = (0, 0,);
         $mode = $ARGV[$i+1];
+        next;
+    }
+    
+    # specify that input file uses fractional coordinates
+    if ( $ARGV[$i] =~ /^-fracin$/ ) {
+        ($setin, $setatom) = (0, 0,);
+        $setfracin = 1;
         next;
     }
 
     # specify that input file uses fractional coordinates
-    if ( $ARGV[$i] =~ /^-fractional$/ ) {
-        $setfractional = 1;
+    if ( $ARGV[$i] =~ /^-nofracout$/ ) {
+        ($setin, $setatom) = (0, 0,);
+        $setfracout = 0;
+        next;
+    }
+    
+    # specify that simulation box in output file shall be symmetric around origin
+    if ( $ARGV[$i] =~ /^-symout$/ ) {
+        ($setin, $setatom) = (0, 0,);
+        $setsymout = 1;
         next;
     }
     
@@ -77,6 +105,7 @@ foreach my $i ( 0 .. $#ARGV ) {
     # environment information (non-position information) per time step
     # in lammps output
     if ( $ARGV[$i] =~ /^-format$/ ) {
+        ($setin, $setatom) = (0, 0,);
         $formatin = $ARGV[$i+1];
         if ($formatin eq "MD") {
             $nlmphead = 8;
@@ -96,6 +125,7 @@ foreach my $i ( 0 .. $#ARGV ) {
     
     # Turn the center of mass (com) translation correction on (1) or off (all other values)
     if ( $ARGV[$i] =~ /^-trlcorr$/ ) {
+        ($setin, $setatom) = (0, 0,);
         print "COM translation correction turned on\n";
         $trlcorr = 1;
         next;
@@ -108,11 +138,21 @@ foreach my $i ( 0 .. $#ARGV ) {
         next;
     }
     if ( $setatom == 1 ) {
-        $atomlist{$ARGV[$i]} = $ARGV[$i+1];
-        $setatom = 0;
+	print "\n$ARGV[$i]\n";
+	if ($ARGV[$i] =~ /:\z/ ) {
+            $atomtypes[$atomtype] = int(substr($ARGV[$i], 0, length($ARGV[$i])-1));
+        } else {
+            $atomlist{$ARGV[$i]} = $atomtypes[$atomtype];
+	    print "$atomlist{$ARGV[$i]}\n";
+	}
+	print "$atomtypes[$atomtype]\n";
+	print "$atomtype\n\n";
         next;
     }
 }
+
+#print Dumper(\%atomlist);
+#die;
 
 # Print some info and open pimd centroid file
 if ( not $trlcorr) {
@@ -130,7 +170,7 @@ if ( $mode =~ /pimd/ ) {
 # input file if not extra file ($ARGV[2]) is specified 
 
 my $line = <$in>;
-my ($tstep0, $natom0, $snap0, $dim0, $ixyz0, $typecol0) = readTimestepData($in,$line,$nlmphead,$formatin,$lengthunit,$setfractional,$atomstyle);
+my ($tstep0, $natom0, $snap0, $dim0, $ixyz0, $typecol0) = readTimestepData($in,$line,$nlmphead,$formatin,$lengthunit,$setfracin,$atomstyle);
 
 my @snap0 = @$snap0;
 my @dim0 = @$dim0;
@@ -143,7 +183,7 @@ my $centroid;
 if ( $mode =~ /pimd/ && $trlcorr == 1 ) {
     my $line = <$centroidin>;
     
-    (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepDataMD($centroidin,$line,$nlmphead,$formatin,$lengthunit,$setfractional,$atomstyle);
+    (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepDataMD($centroidin,$line,$nlmphead,$formatin,$lengthunit,$setfracin,$atomstyle);
     
     @centroid = @$centroid;
     
@@ -180,8 +220,20 @@ if ( $mode !~ /pimd/ ) {
         if ( @{$_}[$ixyz0[1]] > 1 ) {@{$_}[$ixyz0[1]] -= 1;}
         if ( @{$_}[$ixyz0[2]] > 1 ) {@{$_}[$ixyz0[2]] -= 1;}
         
+	if ( $setsymout ) {
+            @{$_}[$ixyz0[0]] -= 0.5;
+            @{$_}[$ixyz0[1]] -= 0.5;
+            @{$_}[$ixyz0[2]] -= 0.5;
+	}
+        
+	if ( not $setfracout ) {
+            @{$_}[$ixyz0[0]] *= $dim0[0];
+            @{$_}[$ixyz0[1]] *= $dim0[1];
+            @{$_}[$ixyz0[2]] *= $dim0[2];
+	}
+        
         my $atomtype = @{$_}[$typecol0];
-        printf $out "$atomlist{$atomtype} @{$_}[$ixyz0[0]] @{$_}[$ixyz0[1]] @{$_}[$ixyz0[2]] \n";
+        printf $out "%2i %3.16e %3.16e %3.16e\n", $atomlist{$atomtype}, @{$_}[$ixyz0[0]], @{$_}[$ixyz0[1]], @{$_}[$ixyz0[2]];
     }
 }
 else {
@@ -200,7 +252,7 @@ else {
 # Print all other snapshots to multislice input files
 while ( my $line = <$in> ) {
     
-    my ($tstep, $natom, $snap, $dim, $ixyz, $typecol) = readTimestepData($in,$line,$nlmphead,$formatin,$lengthunit,$setfractional,$atomstyle);
+    my ($tstep, $natom, $snap, $dim, $ixyz, $typecol) = readTimestepData($in,$line,$nlmphead,$formatin,$lengthunit,$setfracin,$atomstyle);
     
     if (not $tstep) {
         last; 
@@ -233,7 +285,7 @@ while ( my $line = <$in> ) {
     # In PIMD mode read centroid positions
     if ( $mode =~ /pimd/ ) {
         my $line = <$centroidin>;
-        (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nlmphead,$formatin,$lengthunit,$setfractional,$atomstyle);
+        (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nlmphead,$formatin,$lengthunit,$setfracin,$atomstyle);
         @centroid = @$centroid;
         
         print "@{$centroid[1]}\n";
@@ -282,6 +334,19 @@ while ( my $line = <$in> ) {
         if ( @{$_}[$ixyz[1]] > 1 ) {@{$_}[$ixyz[1]] -= 1;}
         if ( @{$_}[$ixyz[2]] > 1 ) {@{$_}[$ixyz[2]] -= 1;}
         
+	
+	if ( $setsymout ) {
+            @{$_}[$ixyz[0]] -= 0.5;
+            @{$_}[$ixyz[1]] -= 0.5;
+            @{$_}[$ixyz[2]] -= 0.5;
+	}
+	
+	if ( not $setfracout ) {
+            @{$_}[$ixyz[0]] *= $dim[0];
+            @{$_}[$ixyz[1]] *= $dim[1];
+            @{$_}[$ixyz[2]] *= $dim[2];
+	}
+
         my $atomtype = @{$_}[$typecol];
         
         printf $out "$atomlist{$atomtype} @{$_}[$ixyz[0]] @{$_}[$ixyz[1]] @{$_}[$ixyz[2]]\n";
@@ -371,7 +436,6 @@ sub readTimestepData {
     chomp($line);
     if ($line ne '' ) {
         $head{0} = $line;
-        
         
         if ( $formatin =~ /MD/ ) {
             foreach my $i (1 .. $nlmphead) {
@@ -467,11 +531,15 @@ sub readTimestepData {
                 if ( $tmp[0] =~ /[Aa]toms/ ) {
                     last;
                 } elsif ($tmp[0] =~ /[Mm]asses/ ) {
-                    $line = <$in>; # remove empty line
                     foreach (1 .. $head{'Ntypes'}) {
                         $line = <$in>;
                         chomp($line);
+                        if ($line =~ //) {
+                    	    $line = <$in>;
+                            chomp($line);
+                        }
                         my @tmp2 = split ' ', $line;
+			print @tmp2;
                         $head{"mass$tmp2[0]"} = $tmp2[1];
                     }
                 } elsif ($tmp[1] =~ /[Aa]toms/ ) {
@@ -497,16 +565,19 @@ sub readTimestepData {
                 $i += 1;
             }
             print Dumper(\%head);
-            print "$head{'xlo'}\n";
+#            print "$head{'xlo'}\n";
             $natom = $head{'Natoms'};
-            print $head{'xhi'};
+#            print $head{'xhi'};
             @dim = ( $head{'xhi'}-$head{'xlo'}, $head{'yhi'}-$head{'ylo'}, $head{'zhi'}-$head{'zlo'} );
             $tstep = 0;
             
-            $line = <$in>; # remove empty line
-            foreach (1 .. $natom) {
+	    foreach (1 .. $natom) {
                 $line = <$in>;
                 chomp($line);
+		if ($line =~ //) {
+                    $line = <$in>;
+                    chomp($line);
+		}
                 push @snap, [split ' ', $line];
             }
             
@@ -515,6 +586,13 @@ sub readTimestepData {
                 $typecol = 2;
                 @ixyz = (4, 5, 6);
             }
+            
+            for my $i (0 .. $natom-1) {
+                $snap[$i][$ixyz[0]] -= $head{'xlo'};
+                $snap[$i][$ixyz[1]] -= $head{'ylo'};
+                $snap[$i][$ixyz[2]] -= $head{'zlo'};
+            }
+             
         }
         
         # convert to fractional coordinates if necessary
@@ -535,10 +613,10 @@ sub readTimestepData {
         }
         elsif ($lengthunit ne "angstrom") {
             print "Unsupported unit. Terminating....\n";
-            die;
+	    die;
         }
     }
-        
+    
     # \@ creates a reference to the array -> see:
     # http://perlmeme.org/faqs/perl_thinking/returning.html	
     return($tstep, $natom, \@snap, \@dim, \@ixyz, $typecol);
