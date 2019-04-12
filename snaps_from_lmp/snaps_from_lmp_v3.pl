@@ -20,6 +20,8 @@ my $setsymout = 0;
 my $trlcorr = 0;
 my $atomtype;
 my @atomtypes;
+my $snapcount = 1;
+my $outevery = 1;
 
 # Loop over arguments and place them into arrays and vars for further use
 foreach my $i ( 0 .. $#ARGV ) {
@@ -35,10 +37,21 @@ foreach my $i ( 0 .. $#ARGV ) {
         next;
     }
     
-    # Recognize which settings are to be made
+    # Recognize which input file is to be used
     if ( $ARGV[$i] =~ /^-in$/ ) {
         ($setin, $setatom) = (1, 0,);
         next;
+    }
+    
+    # Recognize which settings are to be made
+    if ( $ARGV[$i] =~ /^-outevery$/ ) {
+	$outevery = $ARGV[$i+1];
+	if ($outevery) {
+            next;
+	} else {
+            print('False input for outevery');
+            die;
+        }
     }
     
     # Match atom type from lammps with nuclear charge and atom style
@@ -257,13 +270,17 @@ while ( my $line = <$in> ) {
     if (not $tstep) {
         last; 
     }
+    if ($snapcount % $outevery != 0) {
+        next;
+    }
+    
     my @snap = @$snap;
     my @dim = @$dim;
     
     my @ixyz = @$ixyz;
     
     my @comcorr = ();
-
+    
     # correct for atoms reentering simulation box on the opposite site
     # due to periodic boundary conditions
     foreach my $i ( 0 .. $#snap ) {
@@ -351,6 +368,7 @@ while ( my $line = <$in> ) {
         
         printf $out "$atomlist{$atomtype} @{$_}[$ixyz[0]] @{$_}[$ixyz[1]] @{$_}[$ixyz[2]]\n";
     }
+    $snapcount += 1;
 }
 
 
