@@ -2,23 +2,22 @@
 
 use strict;
 use warnings;
+use Data::Dumper;
 
 # set default output prefixes
-my $fileoutincoh = "incohavg_diffpatt";
-my $fileoutcoh = "cohavg_diffpatt";
-my $fileouttds = "tdsavg_diffpatt";
+my $fileavgdiffout = "avgdiffpatt";
+
 
 # Initialize arrays and set defaults
 my @filein = ();
 my @outevery = ();
-my ($setin, $setout, $setshift) = (0, 0, 0);
-my $incohout = 1;
-my $cohout = 1;
-my $tdsout = 1;
+my ($setin, $setout, $setshift, $radprofout) = (0, 0, 0, 0);
+my ($incohout, $cohout, $tdsout) = (1, 1, 1);
+
 
 # Loop over arguments and place them into arrays for further use
 foreach my $i ( 0 .. $#ARGV ) {
-
+    
 	# Recognize which settings are to be made
 	if ( $ARGV[$i] =~ /^-in$/ ) {
 		($setin, $setout) = (1, 0);
@@ -44,6 +43,10 @@ foreach my $i ( 0 .. $#ARGV ) {
 		$tdsout = 0;
 		next;
 	}
+	if ( $ARGV[$i] =~ /^-radprofout$/ ) {
+		$radprofout = 1;
+		next;
+	}
 	
 	# set all the calculation parameters
 	if ( $setin == 1 ) {
@@ -57,18 +60,24 @@ foreach my $i ( 0 .. $#ARGV ) {
 	
 }
 
+if ( !@outevery ) {
+	push @outevery, $#filein;
+}
+
 my @sumint = ();
 my @sumamp = ();
 my @Mincoh = ();
 my @Sincoh = ();
 my @Mcoh = ();
 my @Scoh = ();
+my $ixmax = 0;
+my $iymax = 0;
 
 for my $j ( 0 .. $#filein ) {
 	
 	my @inp = ();
-	my $ixmax = 0;
-	my $iymax = 0;
+    my $ixmax2 = 0;
+    my $iymax2 = 0;
 	
 	open my $in, '<', $filein[$j]
 		or do{
@@ -82,13 +91,25 @@ for my $j ( 0 .. $#filein ) {
 		else {
 			push @inp, [ split /\s+/ ];
 			if ( $inp[$#inp][1] >= $ixmax ) {
-				$ixmax = $inp[$#inp][1];
+				$ixmax2 = $inp[$#inp][1];
 			}
 			if ( $inp[$#inp][2] >= $iymax ) {
-				$iymax = $inp[$#inp][2];
-			}	
+				$iymax2 = $inp[$#inp][2];
+			}
 		}
 	}
+    
+    if ( not $ixmax ) {
+        $ixmax = $ixmax2;
+    } elsif ( $ixmax != $ixmax2 ) {
+        die;
+    }
+    if ( not $iymax ) {
+        $iymax = $iymax2;
+    } elsif ( $iymax != $iymax2 ) {
+        die;
+    }
+    
 	foreach my $index ( 0 .. $#inp ) {
 		my $ix = $inp[$index][1];
 		my $iy = $inp[$index][2];
@@ -139,19 +160,33 @@ for my $j ( 0 .. $#filein ) {
 	
 	foreach my $n ( @outevery ) {
 		if ( $j > 0 and ((( $j + 1 ) % $n) == 0 or $j == $#filein) ) {
+			my $outdp;
+            
+            if ( $incohout or $cohout or $tdsout) {
+                if ( $j == $#filein ) {
+                    my $FILEOUT = $fileavgdiffout . ($#filein + 1) . "final";
+                    open $outdp, '>:encoding(UTF-8)', $FILEOUT;
+                } else {
+                    my $FILEOUT = $fileavgdiffout . ($j+1);
+                    open $outdp, '>:encoding(UTF-8)', $FILEOUT;
+                }
+            }
+            
 			my @incohint = ();
 			my @uincohint = ();
 			my @stddevint = ();
-			
+			my @intincohint = ();
+            
 			my @cohint = ();
 			my @ucohint = ();
+			my @intcohint = ();
 			my @stddevamp = ();
 			my @usumamp = ();
 			
 			my $tdsint;
 			my $utdsint;
+			my @inttdsint = ();
 			
-			my $out;
 			# calculate incoherent and coherent avg
 			for my $ix ( 1 .. $#sumint ) {
 				for my $iy ( 1 .. $#{$sumint[$ix]} ) {
@@ -159,77 +194,37 @@ for my $j ( 0 .. $#filein ) {
 					$incohint[$ix][$iy] = $sumint[$ix][$iy] / ($j+1);
 					$stddevint[$ix][$iy] = sqrt($Sincoh[$ix][$iy][1]/$j);
 					$uincohint[$ix][$iy] = sqrt(1/($j+1)) * $stddevint[$ix][$iy];
-					if ( $cohout or $tdsout ) {
-						# coherent avg
-						$stddevamp[1] = sqrt($Scoh[$ix][$iy][1][1]/$j);
-						$stddevamp[2] = sqrt($Scoh[$ix][$iy][2][1]/$j);
-						$usumamp[1] = sqrt(1/($j+1)) * $stddevamp[1];
-						$usumamp[2] = sqrt(1/($j+1)) * $stddevamp[2];
+					# coherent avg
+					$stddevamp[1] = sqrt($Scoh[$ix][$iy][1][1]/$j);
+					$stddevamp[2] = sqrt($Scoh[$ix][$iy][2][1]/$j);
+					$usumamp[1] = sqrt(1/($j+1)) * $stddevamp[1];
+					$usumamp[2] = sqrt(1/($j+1)) * $stddevamp[2];
 						
-						$cohint[$ix][$iy] = ($sumamp[$ix][$iy][1]*$sumamp[$ix][$iy][1] + $sumamp[$ix][$iy][2]*$sumamp[$ix][$iy][2]) / (($j+1)**2);
-						$ucohint[$ix][$iy] = sqrt(( 2*$sumamp[$ix][$iy][1]*$usumamp[1] )**2 + ( 2*$sumamp[$ix][$iy][2]*$usumamp[2] )**2) / (($j+1)**2);
-					}
+                    
+                    if ( $incohout ) {
+                        printf $outdp "%4i %4i %1.12e %1.12e ", ($ix, $iy, $incohint[$ix][$iy], $uincohint[$ix][$iy]);
+                    } else {
+                        printf $outdp "%4i %4i # # ", ($ix, $iy);
+                    }
+                    
+                    if ( $cohout ) {
+					    $cohint[$ix][$iy] = ($sumamp[$ix][$iy][1]*$sumamp[$ix][$iy][1] + $sumamp[$ix][$iy][2]*$sumamp[$ix][$iy][2]) / (($j+1)**2);
+					    $ucohint[$ix][$iy] = sqrt(( 2*$sumamp[$ix][$iy][1]*$usumamp[1] )**2 + ( 2*$sumamp[$ix][$iy][2]*$usumamp[2] )**2) / (($j+1)**2);
+                        printf $outdp "%1.12e %1.12e ", ($cohint[$ix][$iy], $ucohint[$ix][$iy]);
+                    } else {
+                        printf $outdp "# # ";
+                    }
+                    
+                    if ( $tdsout ) {
+					    $tdsint = $incohint[$ix][$iy] - $cohint[$ix][$iy];
+					    $utdsint = sqrt($uincohint[$ix][$iy]**2 + $ucohint[$ix][$iy]**2);
+                        printf $outdp "%1.12e %1.12e\n", ($tdsint, $utdsint);
+                    } else {
+                        printf $outdp "# #\n";
+                    }
 				}
 			}
-			
-			# print incohavg
-			if ( $incohout ) {
-				if ( $j == $#filein ) {
-					my $FILEOUT = $fileoutincoh . ($#filein + 1) . "final";
-					open $out, '>:encoding(UTF-8)', $FILEOUT;
-				} else {
-					my $FILEOUT = $fileoutincoh . ($j+1);
-					open $out, '>:encoding(UTF-8)', $FILEOUT;
-				}
-				for my $ix ( 1 .. $#sumint ) {
-					for my $iy ( 1 .. $#{$sumint[$ix]} ) {
-						printf $out "%4i %4i %1.12e %1.12e %1.12e\n", ($ix, $iy, $incohint[$ix][$iy], $stddevint[$ix][$iy], $uincohint[$ix][$iy]);
-					}
-					printf $out "\n";
-				}
-				close ($out);
-			}
-			
-			# print cohavg
-			if ( $cohout ) {
-				if ( $j == $#filein ) {
-					my $FILEOUT = $fileoutcoh . ($#filein + 1) . "final";
-					open $out, '>:encoding(UTF-8)', $FILEOUT;
-				} else {
-					my $FILEOUT = $fileoutcoh . ($j+1);
-					open $out, '>:encoding(UTF-8)', $FILEOUT;
-				}
-				
-				for my $ix ( 1 .. $#sumamp ) {
-					for my $iy ( 1 .. $#{$sumamp[$ix]} ) {
-						printf $out "%4i %4i %1.12e %1.12e\n", ($ix, $iy, $cohint[$ix][$iy], $ucohint[$ix][$iy]);
-					}
-					printf $out "\n";
-				}
-				close ($out);
-			}
-			
-			# print tdsavg
-			if ( $tdsout ) {
-				if ( $j == $#filein ) {
-					my $FILEOUT = $fileouttds . ($#filein + 1) . "final";
-					open $out, '>:encoding(UTF-8)', $FILEOUT;
-				} else {
-					my $FILEOUT = $fileouttds . ($j+1);
-					open $out, '>:encoding(UTF-8)', $FILEOUT;
-				}
-				
-				for my $ix ( 1 .. $#incohint ) {
-					for my $iy ( 1 .. $#{$incohint[$ix]} ) {
-						$tdsint = $incohint[$ix][$iy] - $cohint[$ix][$iy];
-						$utdsint = sqrt($uincohint[$ix][$iy]**2 + $ucohint[$ix][$iy]**2);
-						
-						printf $out "%4i %4i %1.12e %1.12e\n", ($ix, $iy, $tdsint, $utdsint);
-					}
-					printf $out "\n";
-				}
-				close ($out);
-			}
+			close ($outdp);
 		}
 	}
 }
