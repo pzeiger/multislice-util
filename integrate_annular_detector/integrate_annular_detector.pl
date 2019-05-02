@@ -28,6 +28,7 @@ my ($detcangx, $detcangy) = 0.0;
 my ($ly, $lx) = (1.0, 1.0); # in angstroms
 my ($nx, $ny) = (0, 0);
 my $accv = 100e3; # in V
+my $setfort33 = 0;
 my @tmp = ();
 
 # Loop over arguments and place them into arrays for further use
@@ -49,6 +50,12 @@ foreach my $i ( 0 .. $#ARGV ) {
 	}
 	if ( $ARGV[$i] =~ /^-shift$/ ) {
 		$setshift = 1;
+		next;
+	}
+	if ( $ARGV[$i] =~ /^-mode$/ ) {
+		if ( $ARGV[$i+1] =~ /^fort33$/) {
+		    $setfort33 = 1;
+		}
 		next;
 	}
 	if ( $ARGV[$i] =~ /^-oang$/ ) {
@@ -140,69 +147,82 @@ my @header = ();
 my $count = 0;
 
 for my $j ( 0 .. $#filein ) {
-	
-	my @inp = ();
-    my $ixmax2 = 0;
-    my $iymax2 = 0;
+    
+    my @inp = ();
+    my $ixmax = 0;
     
     print "opening $filein[$j] \n";
-	open my $in, '<', $filein[$j]
-		or do{
-			warn "Could not open file $filein[$j] $!";
-			next;
-		};
+    open my $in, '<', $filein[$j]
+        or do{
+	    warn "Could not open file $filein[$j] $!";
+            next;
+        };
     
     my $roifileout = $filein[$j] . '_detc' . $detcangx . '-' . $detcangy . '_cang' . $innerdetang . '-'. $outerdetang . '_roi';
     
-	open my $roiout, '>', $roifileout
+    open my $roiout, '>', $roifileout
         or do{
-			warn "Could not open file ${roifileout} $!";
-			next;
-		};
-	while ( <$in> ) {
-		if ( $_ =~ /^\s$/ ) {
-			next;
-		} elsif ( $_ =~ /^\#/) {
+            warn "Could not open file ${roifileout} $!";
+            next;
+        };
+    while ( <$in> ) {
+        if ( $_ =~ /^\s$/ ) {
+            next;
+        } elsif ( $_ =~ /^\#/) {
             push @header, $_;
             print "$_";
             next;
-		} else {
-			@inp = grep { /\S/ } split(/\s+/, $_);
-#			if ( $inp[$#inp][1] >= $ixmax ) {
-#				$ixmax2 = $inp[$#inp][1];
-#			}
-#			if ( $inp[$#inp][2] >= $iymax ) {
-#				$iymax2 = $inp[$#inp][2];
-#			}
+        } else {
+            @inp = grep { /\S/ } split(/\s+/, $_);
             
             my $thetax = ($inp[0]-$dpcnx)*$dkx/$k*1e3;  # in mrad
             my $thetax2 = asin(($inp[0]-$dpcnx)*$dkx/$k)*1e3;  # in mrad
 #            print $thetax, $detcangx, $innerdetang, "\n";
             
-            if ( abs($thetax-$detcangx) >= $innerdetang and abs($thetax-$detcangx) <= $outerdetang ) {
+            if ( abs($thetax-$detcangx) <= $outerdetang ) {
                 my $thetay = ($inp[1]-$dpcny)*$dky/$k*1e3;  # in mrad
-                if ( abs($thetay-$detcangy) >= $innerdetang and abs($thetay-$detcangy) <= $outerdetang ) {
-#                    print "$thetax $detcangx $innerdetang \n";
-#                    print "$thetay $detcangy $innerdetang \n";
-#                    print "quality of small angle approx ", abs($thetax-$thetax2), "\n";
-                    my $thetadet = sqrt(($thetax-$detcangx)**2 + ($thetay-$detcangy)**2);
-#                    print "$thetadet\n";
-                    if ( $thetadet >= $innerdetang and $thetadet <= $outerdetang ) {
-#                        print "$count ok \n";
-                        $count += 1;
-                        $sumincoh += $inp[2];
-                        $usumincoh += $inp[3]*$inp[3];
-                        $sumcoh += $inp[4];
-                        $usumcoh += $inp[5]*$inp[5];
-                        $sumtdsint += $inp[6];
-                        $usumtdsint += $inp[7]*$inp[7];
+                if ( abs($thetay-$detcangy) <= $outerdetang ) {
+	             if ( $inp[0] > $ixmax and $ixmax ne 0 ) {
+                         printf $roiout "\n";
+                     }
+	             if ( $inp[0] > $ixmax ) {
+                         $ixmax = $inp[0];
+                     }
+#                     print "$thetax $detcangx $innerdetang \n";
+#                     print "$thetay $detcangy $innerdetang \n";
+#                     print "quality of small angle approx ", abs($thetax-$thetax2), "\n";
+                     my $thetadet = sqrt(($thetax-$detcangx)**2 + ($thetay-$detcangy)**2);
+#                     print "$thetadet\n";
+                     
+                     if ( $setfort33 ) {
+                         if ( $thetadet >= $innerdetang and $thetadet <= $outerdetang ) {
+#                             print "$count ok \n";
+                             $count += 1;
+                             $sumincoh += $inp[2]*$inp[2] + $inp[3]*$inp[3];
+                             printf $roiout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3];
+                         } else {
+                             printf $roiout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], 0.0, 0.0;
+			 }
+                     } else {
+                         if ( $thetadet >= $innerdetang and $thetadet <= $outerdetang ) {
+#                             print "$count ok \n";
+                             $count += 1;
+                             $sumincoh += $inp[2];
+                             $usumincoh += $inp[3]*$inp[3];
+                             $sumcoh += $inp[4];
+                             $usumcoh += $inp[5]*$inp[5];
+                             $sumtdsint += $inp[6];
+                             $usumtdsint += $inp[7]*$inp[7];
+                             printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5], $inp[6], $inp[7];
+                         } else {
+                             printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+                         }
                     }
-                    printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5], $inp[6], $inp[7];
-#                    print "$inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5], $inp[6], $inp[7]";
                 }
             }
-		}
-	}
+        }
+    }
+    printf $roiout "\n";
     close($roiout);
     
     my $beamposx;
@@ -215,8 +235,12 @@ for my $j ( 0 .. $#filein ) {
             $beamposy = $tmp2[2];
         }
     }
-    print "$beamposx, $beamposy\n";
-    printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $beamposx, $beamposy, $sumincoh, sqrt($usumincoh), $sumcoh, sqrt($usumcoh), $sumtdsint, sqrt($usumtdsint); 
+    if ( $setfort33 ) {
+        printf $intout "%1.12e\n", $sumincoh;
+    } else {
+        print "$beamposx, $beamposy\n";
+        printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $beamposx, $beamposy, $sumincoh, sqrt($usumincoh), $sumcoh, sqrt($usumcoh), $sumtdsint, sqrt($usumtdsint);
+    }
 }
 
 
