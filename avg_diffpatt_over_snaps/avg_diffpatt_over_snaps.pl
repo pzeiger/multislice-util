@@ -11,8 +11,9 @@ my $fileavgdiffout = "avgdiffpatt";
 # Initialize arrays and set defaults
 my @filein = ();
 my @outevery = ();
-my ($setin, $setout, $setshift, $radprofout) = (0, 0, 0, 0);
-my ($incohout, $cohout, $tdsout) = (1, 1, 1);
+my ($setin, $setout, $setshift) = (0, 0, 0);
+my ($incohout, $cohout) = (1, 1);
+#my ($incohout, $cohout, $tdsout) = (1, 1, 1);
 
 
 # Loop over arguments and place them into arrays for further use
@@ -39,14 +40,10 @@ foreach my $i ( 0 .. $#ARGV ) {
 		$cohout = 0;
 		next;
 	}
-	if ( $ARGV[$i] =~ /^-notds$/ ) {
-		$tdsout = 0;
-		next;
-	}
-	if ( $ARGV[$i] =~ /^-radprofout$/ ) {
-		$radprofout = 1;
-		next;
-	}
+#	if ( $ARGV[$i] =~ /^-notds$/ ) {
+#		$tdsout = 0;
+#		next;
+#	}
 	
 	# set all the calculation parameters
 	if ( $setin == 1 ) {
@@ -162,15 +159,25 @@ for my $j ( 0 .. $#filein ) {
 		if ( $j > 0 and ((( $j + 1 ) % $n) == 0 or $j == $#filein) ) {
 			my $outdp;
             
-            if ( $incohout or $cohout or $tdsout) {
-                if ( $j == $#filein ) {
-                    my $FILEOUT = $fileavgdiffout . ($#filein + 1) . "final";
-                    open $outdp, '>:encoding(UTF-8)', $FILEOUT;
-                } else {
-                    my $FILEOUT = $fileavgdiffout . ($j+1);
-                    open $outdp, '>:encoding(UTF-8)', $FILEOUT;
-                }
+            if ( $incohout or $cohout ) {
+                my $FILEOUT = $fileavgdiffout . ($j+1);
+                open $outdp, '>:encoding(UTF-8)', $FILEOUT;
+#                if ( $j == $#filein ) {
+#                    my $FILEOUT = $fileavgdiffout . ($#filein + 1) . "final";
+#                    open $outdp, '>:encoding(UTF-8)', $FILEOUT;
+#                } else {
+#                    my $FILEOUT = $fileavgdiffout . ($j+1);
+#                    open $outdp, '>:encoding(UTF-8)', $FILEOUT;
+#                }
             }
+            
+            printf $outdp "# Averaged diffraction pattern. Columns contain:\n";
+            printf $outdp "# 1 -> x pixel\n";
+            printf $outdp "# 2 -> y pixel\n";
+            printf $outdp "# 3 -> incohint\n";
+            printf $outdp "# 4 -> uincohint\n";
+            printf $outdp "# 5 -> cohint\n";
+            printf $outdp "# 6 -> ucohint\n";
             
 			my @incohint = ();
 			my @uincohint = ();
@@ -210,19 +217,20 @@ for my $j ( 0 .. $#filein ) {
                     if ( $cohout ) {
 					    $cohint[$ix][$iy] = ($sumamp[$ix][$iy][1]*$sumamp[$ix][$iy][1] + $sumamp[$ix][$iy][2]*$sumamp[$ix][$iy][2]) / (($j+1)**2);
 					    $ucohint[$ix][$iy] = sqrt(( 2*$sumamp[$ix][$iy][1]*$usumamp[1] )**2 + ( 2*$sumamp[$ix][$iy][2]*$usumamp[2] )**2) / (($j+1)**2);
-                        printf $outdp "%1.12e %1.12e ", ($cohint[$ix][$iy], $ucohint[$ix][$iy]);
+                        printf $outdp "%1.12e %1.12e \n", ($cohint[$ix][$iy], $ucohint[$ix][$iy]);
                     } else {
-                        printf $outdp "# # ";
+                        printf $outdp "# # \n";
                     }
                     
-                    if ( $tdsout ) {
-					    $tdsint = $incohint[$ix][$iy] - $cohint[$ix][$iy];
-					    $utdsint = sqrt($uincohint[$ix][$iy]**2 + $ucohint[$ix][$iy]**2);
-                        printf $outdp "%1.12e %1.12e\n", ($tdsint, $utdsint);
-                    } else {
-                        printf $outdp "# #\n";
-                    }
+#                    if ( $tdsout ) {
+#					    $tdsint = $incohint[$ix][$iy] - $cohint[$ix][$iy];
+#					    $utdsint = sqrt($uincohint[$ix][$iy]**2 + $ucohint[$ix][$iy]**2);
+#                        printf $outdp "%1.12e %1.12e\n", ($tdsint, $utdsint);
+#                    } else {
+#                        printf $outdp "# #\n";
+#                    }
 				}
+                printf $outdp "\n";
 			}
 			close ($outdp);
 		}
