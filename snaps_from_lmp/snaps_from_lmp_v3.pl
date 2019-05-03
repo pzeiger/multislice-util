@@ -12,7 +12,7 @@ my $formatin = "MD";
 my $in;
 my $lengthunit = "angstrom";
 my $mode = "clmd";
-my $nlmphead = 8;
+my $nhead;
 my ($setin, $setatom) = (0, 0,);
 my $setfracin = 0;
 my $setfracout = 1;
@@ -20,8 +20,15 @@ my $setsymout = 0;
 my $trlcorr = 0;
 my $atomtype;
 my @atomtypes;
-my $snapcount = 1;
-my $outevery = 1;
+
+#my $snapcount = 1;
+#my $outevery = 1;
+# start output after timesteps
+my $nfirst = 0;
+# -1 -> sample until EOF, other wise give end time in time units
+my $nlast = -1;
+# sample every
+my $nsample = 1;
 
 # Loop over arguments and place them into arrays and vars for further use
 foreach my $i ( 0 .. $#ARGV ) {
@@ -43,13 +50,15 @@ foreach my $i ( 0 .. $#ARGV ) {
         next;
     }
     
-    # Recognize which settings are to be made
-    if ( $ARGV[$i] =~ /^-outevery$/ ) {
-	$outevery = $ARGV[$i+1];
-	if ($outevery) {
+    # Set sampling properties
+    if ( $ARGV[$i] =~ /^-sample$/ ) {
+	    $nfirst = $ARGV[$i+1];
+	    $nsample = $ARGV[$i+2];
+	    $nlast = $ARGV[$i+3];
+	    if ($nfirst and ($nfirst < $nlast or $nlast < 0) and $nsample > 0) {
             next;
-	} else {
-            print('False input for outevery');
+	    } else {
+            print('False input for -sample');
             die;
         }
     }
@@ -114,21 +123,21 @@ foreach my $i ( 0 .. $#ARGV ) {
     }
     
     # Specify the input format. Currently supported are "MD", "lmp" and "xyz"
-    # Variable $nlmphead specifies the numebr of lines containing 
+    # Variable $nhead specifies the numebr of lines containing 
     # environment information (non-position information) per time step
     # in lammps output
     if ( $ARGV[$i] =~ /^-format$/ ) {
         ($setin, $setatom) = (0, 0,);
         $formatin = $ARGV[$i+1];
-        if ($formatin eq "MD") {
-            $nlmphead = 8;
-            print "Input file format is MD\n";
-        } elsif ($formatin eq "lmp") {
-            $nlmphead = 2;
-            print "Input file format is xyz\n";
-        } elsif ($formatin eq "xyz") {
-            $nlmphead = 2;
-            print "Input file format is xyz\n";
+        if ($formatin eq "lmptrj") {
+            $nhead = 8;
+            print "Input file format is lmptrj\n";
+        } elsif ($formatin eq "lmpdata") {
+            $nhead = 2;
+            print "Input file format is lmpdata\n";
+        } elsif ($formatin eq "ipixyz") {
+            $nhead = 2;
+            print "Input file format is ipixyz\n";
         } else {
             print "Input file format not recognized\n";
             die;
@@ -151,15 +160,15 @@ foreach my $i ( 0 .. $#ARGV ) {
         next;
     }
     if ( $setatom == 1 ) {
-	print "\n$ARGV[$i]\n";
+#	print "\n$ARGV[$i]\n";
 	if ($ARGV[$i] =~ /:\z/ ) {
             $atomtypes[$atomtype] = int(substr($ARGV[$i], 0, length($ARGV[$i])-1));
         } else {
             $atomlist{$ARGV[$i]} = $atomtypes[$atomtype];
-	    print "$atomlist{$ARGV[$i]}\n";
+#	    print "$atomlist{$ARGV[$i]}\n";
 	}
-	print "$atomtypes[$atomtype]\n";
-	print "$atomtype\n\n";
+#	print "$atomtypes[$atomtype]\n";
+#	print "$atomtype\n\n";
         next;
     }
 }
@@ -183,7 +192,7 @@ if ( $mode =~ /pimd/ ) {
 # input file if not extra file ($ARGV[2]) is specified 
 
 my $line = <$in>;
-my ($tstep0, $natom0, $snap0, $dim0, $ixyz0, $typecol0) = readTimestepData($in,$line,$nlmphead,$formatin,$lengthunit,$setfracin,$atomstyle);
+my ($tstep0, $natom0, $snap0, $dim0, $ixyz0, $typecol0) = readTimestepData($in,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle);
 
 my @snap0 = @$snap0;
 my @dim0 = @$dim0;
@@ -196,7 +205,7 @@ my $centroid;
 if ( $mode =~ /pimd/ && $trlcorr == 1 ) {
     my $line = <$centroidin>;
     
-    (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepDataMD($centroidin,$line,$nlmphead,$formatin,$lengthunit,$setfracin,$atomstyle);
+    (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepDataMD($centroidin,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle);
     
     @centroid = @$centroid;
     
@@ -265,12 +274,18 @@ else {
 # Print all other snapshots to multislice input files
 while ( my $line = <$in> ) {
     
-    my ($tstep, $natom, $snap, $dim, $ixyz, $typecol) = readTimestepData($in,$line,$nlmphead,$formatin,$lengthunit,$setfracin,$atomstyle);
+    my ($tstep, $natom, $snap, $dim, $ixyz, $typecol) = readTimestepData($in,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle);
     
     if (not $tstep) {
-        last; 
-    }
-    if ($snapcount % $outevery != 0) {
+        last;
+    } elsif ($tstep < $nfirst) {
+		print "time step not sampled\n";
+        next;
+    } elsif ($tstep > $nlast and $nlast > 0) {
+		print "time step not sampled\n";
+        last;
+    } elsif ($tstep % $nsample != 0) {
+		print "time step not sampled\n";
         next;
     }
     
@@ -302,7 +317,7 @@ while ( my $line = <$in> ) {
     # In PIMD mode read centroid positions
     if ( $mode =~ /pimd/ ) {
         my $line = <$centroidin>;
-        (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nlmphead,$formatin,$lengthunit,$setfracin,$atomstyle);
+        (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle);
         @centroid = @$centroid;
         
         print "@{$centroid[1]}\n";
@@ -351,24 +366,22 @@ while ( my $line = <$in> ) {
         if ( @{$_}[$ixyz[1]] > 1 ) {@{$_}[$ixyz[1]] -= 1;}
         if ( @{$_}[$ixyz[2]] > 1 ) {@{$_}[$ixyz[2]] -= 1;}
         
-	
-	if ( $setsymout ) {
+        
+        if ( $setsymout ) {
             @{$_}[$ixyz[0]] -= 0.5;
             @{$_}[$ixyz[1]] -= 0.5;
             @{$_}[$ixyz[2]] -= 0.5;
-	}
-	
-	if ( not $setfracout ) {
+        }
+        
+        if ( not $setfracout ) {
             @{$_}[$ixyz[0]] *= $dim[0];
             @{$_}[$ixyz[1]] *= $dim[1];
             @{$_}[$ixyz[2]] *= $dim[2];
-	}
-
-        my $atomtype = @{$_}[$typecol];
+        }
         
+        my $atomtype = @{$_}[$typecol];    
         printf $out "$atomlist{$atomtype} @{$_}[$ixyz[0]] @{$_}[$ixyz[1]] @{$_}[$ixyz[2]]\n";
     }
-    $snapcount += 1;
 }
 
 
@@ -431,7 +444,7 @@ while ( my $line = <$in> ) {
 sub readTimestepData {
     my $in = $_[0];
     my $line = $_[1];
-    my $nlmphead = $_[2];
+    my $nhead = $_[2];
     my $formatin = $_[3];
     my $lengthunit = $_[4];
     my $fractional = $_[5];
@@ -446,6 +459,8 @@ sub readTimestepData {
     my %head;
     my $idcol;
     my $typecol;
+	my $cellunit = $lengthunit;
+	my $posunit = $lengthunit;
     
     my @ixyz;
     
@@ -455,8 +470,8 @@ sub readTimestepData {
     if ($line ne '' ) {
         $head{0} = $line;
         
-        if ( $formatin =~ /MD/ ) {
-            foreach my $i (1 .. $nlmphead) {
+        if ( $formatin =~ /lmptrj/ ) {
+            foreach my $i (1 .. $nhead) {
                 $line = <$in>;
                 chomp($line);
                 $head{$i} = $line;
@@ -468,7 +483,7 @@ sub readTimestepData {
             $tstep = (split ' ', $head{1})[0];
             $natom = (split ' ', $head{3})[0];
             
-            my @tmp = split ' ', $head{$nlmphead};
+            my @tmp = split ' ', $head{$nhead};
             
             # determine column number of id
             foreach my $i (0 .. $#tmp) {
@@ -502,7 +517,7 @@ sub readTimestepData {
                 }
             }
             
-            foreach my $i ( ($nlmphead-3) .. ($nlmphead-1) ) {
+            foreach my $i ( ($nhead-3) .. ($nhead-1) ) {
                 my @tmp = split ' ', $head{$i};
                 push @dim, ( $tmp[1] - $tmp[0] );
             }
@@ -517,7 +532,7 @@ sub readTimestepData {
             
         } elsif ( $formatin =~ /xyz/ ) {
             
-            foreach my $i (1 .. $nlmphead) {
+            foreach my $i (1 .. ($nhead-1)) {
                 $line = <$in>;
                 chomp($line);
                 $head{$i} = $line;
@@ -525,9 +540,16 @@ sub readTimestepData {
             }
             
             $natom = (split ' ', $head{0})[0];
-            @dim = (split ' ',  $head{1})[2,3,4];
-            $tstep = (split ' ', $head{1})[12];
+            my @tmp = split ' ', $head{1};
+            @dim = @tmp[2,3,4];
+            $tstep = $tmp[9];
             
+			if ($tmp[12] =~ /position{atomic_unit}/) {
+				$cellunit = "bohr";
+			}
+			if ($tmp[13] =~ /cell{atomic_unit}/) {
+				$cellunit = "bohr";
+			}
             foreach (1 .. $natom) {
                 $line = <$in>;
                 chomp($line);
@@ -535,9 +557,10 @@ sub readTimestepData {
             }
             
             # 2nd, 3rd, and 4th column contain the x-, y- and z-positions
+			$typecol = 0;
             @ixyz = (1, 2, 3);
             
-        } elsif ( $formatin =~ /lmp/ ) {
+        } elsif ( $formatin =~ /lmpdata/ ) {
             my $i = 0;
             while ($line = <$in>) {
                 chomp($line);
@@ -557,7 +580,7 @@ sub readTimestepData {
                             chomp($line);
                         }
                         my @tmp2 = split ' ', $line;
-			print @tmp2;
+                        print @tmp2;
                         $head{"mass$tmp2[0]"} = $tmp2[1];
                     }
                 } elsif ($tmp[1] =~ /[Aa]toms/ ) {
@@ -579,7 +602,6 @@ sub readTimestepData {
                     $head{'zhi'} = $tmp[1];
             	print "$head{'xlo'}\n";
                 }
-                
                 $i += 1;
             }
             print Dumper(\%head);
@@ -589,13 +611,14 @@ sub readTimestepData {
             @dim = ( $head{'xhi'}-$head{'xlo'}, $head{'yhi'}-$head{'ylo'}, $head{'zhi'}-$head{'zlo'} );
             $tstep = 0;
             
-	    foreach (1 .. $natom) {
+            foreach (1 .. $natom) {
                 $line = <$in>;
                 chomp($line);
-		if ($line =~ //) {
+                
+                if ($line =~ //) {
                     $line = <$in>;
                     chomp($line);
-		}
+                }
                 push @snap, [split ' ', $line];
             }
             
@@ -603,16 +626,43 @@ sub readTimestepData {
             if ($atomstyle =~ /full/) {
                 $typecol = 2;
                 @ixyz = (4, 5, 6);
-            }
+            } else {
+				print("Unsupported atomtype");
+				die;
+			}
             
             for my $i (0 .. $natom-1) {
                 $snap[$i][$ixyz[0]] -= $head{'xlo'};
                 $snap[$i][$ixyz[1]] -= $head{'ylo'};
                 $snap[$i][$ixyz[2]] -= $head{'zlo'};
             }
-             
         }
         
+        # Convert cell dimension to Angstroms
+        if ($cellunit =~ /bohr/) {
+            print "Unit of length for cell dimensions is $cellunit... Converting to angstrom\n";
+			# numerical value of bohr taken from ipi
+            $dim[0] *= 0.529177249;
+            $dim[1] *= 0.529177249;
+            $dim[2] *= 0.529177249;
+        } elsif ($cellunit ne "angstrom") {
+            print "Unsupported unit. Terminating....\n";
+	        die;
+        }
+
+        if ($posunit =~ /bohr/) {
+            print "Unit of length for atomic positions is $posunit... Converting to angstrom\n";
+			# numerical value of bohr taken from ipi
+            for my $i (0 .. $natom-1) {
+                $snap[$i][$ixyz[0]] *= 0.529177249;
+                $snap[$i][$ixyz[1]] *= 0.529177249;
+                $snap[$i][$ixyz[2]] *= 0.529177249;
+			}
+        } elsif ($posunit ne "angstrom") {
+            print "Unsupported unit. Terminating....\n";
+	        die;
+        }
+		
         # convert to fractional coordinates if necessary
         if (not $fractional) {
             for my $i (0 .. $natom-1) {
@@ -621,20 +671,9 @@ sub readTimestepData {
                 $snap[$i][$ixyz[2]] /= $dim[2];
             }
         }
-        
-        # Convert cell dimension to Angstroms
-        if ($lengthunit =~ /bohr/) {
-            print "Unit of length is $lengthunit... Converting to angstrom\n";
-            $dim[0] *= 0.5291772107;
-            $dim[1] *= 0.5291772107;
-            $dim[2] *= 0.5291772107;
-        }
-        elsif ($lengthunit ne "angstrom") {
-            print "Unsupported unit. Terminating....\n";
-	    die;
-        }
     }
     
+    print "@dim \n$tstep\n";
     # \@ creates a reference to the array -> see:
     # http://perlmeme.org/faqs/perl_thinking/returning.html	
     return($tstep, $natom, \@snap, \@dim, \@ixyz, $typecol);
