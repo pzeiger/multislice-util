@@ -31,6 +31,7 @@ my ($ly, $lx) = (1.0, 1.0); # in angstroms
 my ($nx, $ny) = (0, 0);
 my $accv = 100e3; # in V
 my $setfort33 = 0;
+my $setroiout = 0;
 my @tmp = ();
 
 
@@ -55,10 +56,16 @@ foreach my $i ( 0 .. $#ARGV ) {
 		$setshift = 1;
 		next;
 	}
+    # choose if to run in fort33 mode
 	if ( $ARGV[$i] =~ /^-mode$/ ) {
 		if ( $ARGV[$i+1] =~ /^fort33$/) {
 		    $setfort33 = 1;
 		}
+		next;
+	}
+	# turn output of roi on
+	if ( $ARGV[$i] =~ /^-roiout$/ ) {
+		$setroiout = 1;
 		next;
 	}
 	if ( $ARGV[$i] =~ /^-oang$/ ) {
@@ -158,8 +165,8 @@ my @sumincoh = ();
 my @usumincoh = ();
 my @sumcoh = ();
 my @usumcoh = ();
-my @sumtdsint = ();
-my @usumtdsint = ();
+my @sumtds = ();
+my @usumtds = ();
 my @header = ();
 my @count = ();
 
@@ -204,6 +211,16 @@ for my $j ( 0 .. $#filein ) {
             warn "Could not open file ${roifileout} $!\n";
             next;
         };
+    
+    # initialize arrays for further use
+    $count[$beamposx][$beamposy] = 0;
+    $sumincoh[$beamposx][$beamposy] = 0.0;
+    $usumincoh[$beamposx][$beamposy] = 0.0;
+    $sumcoh[$beamposx][$beamposy] = 0.0;
+    $usumcoh[$beamposx][$beamposy] = 0.0;
+    $sumtds[$beamposx][$beamposy] = 0.0;
+    $usumtds[$beamposx][$beamposy] = 0.0;
+    
     while ( <$in> ) {
         if ( $_ =~ /^\s$/ ) {
             next;
@@ -216,10 +233,11 @@ for my $j ( 0 .. $#filein ) {
             my $thetax = ($inp[0]-$dpcnx)*$dkx/$k*1e3;  # in mrad
             my $thetax2 = asin(($inp[0]-$dpcnx)*$dkx/$k)*1e3;  # in mrad
 #            print $thetax, $detcangx, $innerdetang, "\n";
-            
             if ( abs($thetax-$detcangx) <= $outerdetang ) {
                 my $thetay = ($inp[1]-$dpcny)*$dky/$k*1e3;  # in mrad
                 if ( abs($thetay-$detcangy) <= $outerdetang ) {
+#                    print "thetax: ", $thetax, " ", $inp[0], "\n";
+#                    print "thetay: ", $thetay, " ", $inp[1], "\n";
                     if ( $inp[0] > $ixmax and $ixmax ne 0 ) {
                          printf $roiout "\n";
                     }
@@ -249,9 +267,16 @@ for my $j ( 0 .. $#filein ) {
                             $usumincoh[$beamposx][$beamposy] += $inp[3]*$inp[3];
                             $sumcoh[$beamposx][$beamposy] += $inp[4];
                             $usumcoh[$beamposx][$beamposy] += $inp[5]*$inp[5];
-                            printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5];
+
+                            $sumtds[$beamposx][$beamposy] += ($inp[2] - $inp[4]);
+                            $usumtds[$beamposx][$beamposy] += ($inp[3]**2 + $inp[5]**2);
+                            if ($setroiout) {
+                                printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5];
+                            }
                         } else {
-                            printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], 0.0, 0.0, 0.0, 0.0;
+                            if ($setroiout) {
+                                printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], 0.0, 0.0, 0.0, 0.0;
+                            }
                         }
                     }
                 }
@@ -270,10 +295,10 @@ if ( not $setfort33 ) {
     for my $ibx (0 .. $#sumincoh) {
         for my $iby (0 .. $#{$sumincoh[$ibx]}) {
             if ( defined($sumincoh[$ibx][$iby]) ) {
-                printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e\n", $ibx, $iby, $sumincoh[$ibx][$iby], sqrt($usumincoh[$ibx][$iby]), $sumcoh[$ibx][$iby], sqrt($usumcoh[$ibx][$iby]);
+                printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $ibx, $iby, $sumincoh[$ibx][$iby], sqrt($usumincoh[$ibx][$iby]), $sumcoh[$ibx][$iby], sqrt($usumcoh[$ibx][$iby]), $sumtds[$ibx][$iby], sqrt($usumtds[$ibx][$iby]);
             } else {
                 print "Warning: data missing for beam position ($ibx, $iby). Printing zeros...\n";
-                printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e\n", $ibx, $iby, 0.0, 0.0, 0.0, 0.0;
+                printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $ibx, $iby, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
             }
         }
         printf $intout "\n";
