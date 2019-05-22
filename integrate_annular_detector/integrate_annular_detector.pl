@@ -65,6 +65,7 @@ foreach my $i ( 0 .. $#ARGV ) {
 	}
 	# turn output of roi on
 	if ( $ARGV[$i] =~ /^-roiout$/ ) {
+        print "Output of ROI on\n";
 		$setroiout = 1;
 		next;
 	}
@@ -203,14 +204,16 @@ for my $j ( 0 .. $#filein ) {
         $beamposx = 0;
         $beamposy = 0;
     }
-    
-    my $roifileout = $filein[$j] . '_detc' . $detcangx . '-' . $detcangy . '_cang' . $innerdetang . '-'. $outerdetang . '_roi';
-    
-    open my $roiout, '>', $roifileout
-        or do{
-            warn "Could not open file ${roifileout} $!\n";
-            next;
-        };
+    my $roiout;
+    if ( $setroiout ) {
+        my $roifileout = $filein[$j] . '_detc' . $detcangx . '-' . $detcangy . '_cang' . $innerdetang . '-'. $outerdetang . '_roi';
+        
+        open $roiout, '>', $roifileout
+            or do{
+                warn "Could not open file ${roifileout} $!\n";
+                next;
+            };
+    }
     
     # initialize arrays for further use
     $count[$beamposx][$beamposy] = 0;
@@ -238,7 +241,7 @@ for my $j ( 0 .. $#filein ) {
                 if ( abs($thetay-$detcangy) <= $outerdetang ) {
 #                    print "thetax: ", $thetax, " ", $inp[0], "\n";
 #                    print "thetay: ", $thetay, " ", $inp[1], "\n";
-                    if ( $inp[0] > $ixmax and $ixmax ne 0 ) {
+                    if ( $inp[0] > $ixmax and $ixmax ne 0 and $setroiout ) {
                          printf $roiout "\n";
                     }
 	                if ( $inp[0] > $ixmax ) {
@@ -255,9 +258,13 @@ for my $j ( 0 .. $#filein ) {
 #                            print "$count ok \n";
                             $count[$beamposx][$beamposy] += 1;
                             $sumincoh[$beamposx][$beamposy] += $inp[2]*$inp[2] + $inp[3]*$inp[3];
-                            printf $roiout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3];
+                            if ( $setroiout ) {
+                                printf $roiout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3];
+                            }
                         } else {
-                            printf $roiout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], 0.0, 0.0;
+                            if ( $setroiout ) {
+                                printf $roiout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], 0.0, 0.0;
+                            }
                         }
                     } else {
                         if ( $thetadet >= $innerdetang and $thetadet <= $outerdetang ) {
@@ -270,11 +277,13 @@ for my $j ( 0 .. $#filein ) {
 
                             $sumtds[$beamposx][$beamposy] += ($inp[2] - $inp[4]);
                             $usumtds[$beamposx][$beamposy] += ($inp[3]**2 + $inp[5]**2);
-                            if ($setroiout) {
+                            
+                            if ( $setroiout ) {
+                                print "$setroiout\n";
                                 printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5];
                             }
                         } else {
-                            if ($setroiout) {
+                            if ( $setroiout ) {
                                 printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], 0.0, 0.0, 0.0, 0.0;
                             }
                         }
@@ -283,8 +292,11 @@ for my $j ( 0 .. $#filein ) {
             }
         }
     }
-    printf $roiout "\n";
-    close($roiout);
+    
+    if ( $setroiout ) {
+        printf $roiout "\n";
+        close($roiout);
+    }
     
     if ( $setfort33 ) {
         printf $intout "%1.12e\n", $sumincoh[$beamposx][$beamposy];
