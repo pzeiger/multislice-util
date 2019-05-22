@@ -170,6 +170,7 @@ my @sumtds = ();
 my @usumtds = ();
 my @header = ();
 my @count = ();
+my $ibeamymax = 0;
 
 for my $j ( 0 .. $#filein ) {
     
@@ -198,6 +199,9 @@ for my $j ( 0 .. $#filein ) {
         if ( $beamposx eq "" and $beamposy eq "") {
             print "Error: Could not determine beam position. Please check file \"$filein[$j]\"!\n";
             die;
+        }
+	if ( $beamposy > $ibeamymax ) {
+            $ibeamymax = $beamposy;
         }
         print "Current beam position: ($beamposx, $beamposy)\n";
     } else {
@@ -244,7 +248,7 @@ for my $j ( 0 .. $#filein ) {
                     if ( $inp[0] > $ixmax and $ixmax ne 0 and $setroiout ) {
                          printf $roiout "\n";
                     }
-	                if ( $inp[0] > $ixmax ) {
+	            if ( $inp[0] > $ixmax ) {
                         $ixmax = $inp[0];
                     }
 #                    print "$thetax $detcangx $innerdetang \n";
@@ -305,13 +309,24 @@ for my $j ( 0 .. $#filein ) {
 
 if ( not $setfort33 ) {
     for my $ibx (0 .. $#sumincoh) {
-        for my $iby (0 .. $#{$sumincoh[$ibx]}) {
-            if ( defined($sumincoh[$ibx][$iby]) ) {
-                printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $ibx, $iby, $sumincoh[$ibx][$iby], sqrt($usumincoh[$ibx][$iby]), $sumcoh[$ibx][$iby], sqrt($usumcoh[$ibx][$iby]), $sumtds[$ibx][$iby], sqrt($usumtds[$ibx][$iby]);
-            } else {
-                print "Warning: data missing for beam position ($ibx, $iby). Printing zeros...\n";
-                printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $ibx, $iby, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
-            }
+	print "$ibx \n";
+	print "$#{$sumincoh[$ibx]}\n";
+	if ($#{$sumincoh[$ibx]} == -1) {
+	    for my $iby (0 .. $ibeamymax) {
+            	print "Warning: data missing for beam position ($ibx, $iby). Printing zeros...\n";
+            	printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $ibx, $iby, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+	    }
+    	} else {	
+	    for my $iby (0 .. $#{$sumincoh[$ibx]}) {
+	        print "$ibx $iby \n";
+	        print "@sumincoh[$ibx], $sumincoh[$ibx][$iby]\n";
+	        if ( defined($sumincoh[$ibx][$iby]) ) {
+	            printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $ibx, $iby, $sumincoh[$ibx][$iby], sqrt($usumincoh[$ibx][$iby]), $sumcoh[$ibx][$iby], sqrt($usumcoh[$ibx][$iby]), $sumtds[$ibx][$iby], sqrt($usumtds[$ibx][$iby]);
+                } else {
+		    print "Warning: data missing for beam position ($ibx, $iby). Printing zeros...\n";
+		    printf $intout "%2i %2i %1.12e %1.12e %1.12e %1.12e %1.12e %1.12e\n", $ibx, $iby, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+                }
+	    }
         }
         printf $intout "\n";
     }
