@@ -13,8 +13,23 @@ my @filein = ();
 my @outevery = ();
 my ($setin, $setout, $setshift) = (0, 0, 0);
 my ($incohout, $cohout) = (1, 1);
+my $log2 = 0;
 #my ($incohout, $cohout, $tdsout) = (1, 1, 1);
 
+
+# sort array of strings by number
+sub by_number {
+    my ( $anum ) = $a =~ /(\d+)/;
+    my ( $bnum ) = $b =~ /(\d+)/;
+    ( $anum || 0 ) <=> ( $bnum || 0 );
+}
+
+# sort array of strings by number
+sub by_snapnumber {
+    my ( $anum ) = $a =~ /snapshot(\d+)/;
+    my ( $bnum ) = $b =~ /snapshot(\d+)/;
+    ( $anum || 0 ) <=> ( $bnum || 0 );
+}
 
 # Loop over arguments and place them into arrays for further use
 foreach my $i ( 0 .. $#ARGV ) {
@@ -40,6 +55,10 @@ foreach my $i ( 0 .. $#ARGV ) {
 		$cohout = 0;
 		next;
 	}
+	if ( $ARGV[$i] =~ /^-log2$/ ) {
+		$log2 = 1;
+		next;
+	}
 #	if ( $ARGV[$i] =~ /^-notds$/ ) {
 #		$tdsout = 0;
 #		next;
@@ -48,6 +67,7 @@ foreach my $i ( 0 .. $#ARGV ) {
 	# set all the calculation parameters
 	if ( $setin == 1 ) {
 		push @filein, $ARGV[$i];
+        print "$ARGV[$i]\n";
 		next;
 	}
 	if ( $setout == 1 ) {
@@ -57,9 +77,26 @@ foreach my $i ( 0 .. $#ARGV ) {
 	
 }
 
+# sort input array
+@filein = sort by_snapnumber @filein;
+
 if ( !@outevery ) {
 	push @outevery, $#filein;
 }
+
+if ($log2) {
+    @outevery = (scalar @filein,);
+    my $tmpvar = 2;
+    while ($tmpvar <= $#filein) {
+        push @outevery, $tmpvar;
+        $tmpvar = $tmpvar*2;
+    }
+}
+
+# sort outevery array
+print Dumper(@outevery);
+@outevery = sort by_number @outevery;
+print Dumper(@outevery);
 
 my @sumint = ();
 my @sumamp = ();
@@ -69,6 +106,7 @@ my @Mcoh = ();
 my @Scoh = ();
 my $ixmax = 0;
 my $iymax = 0;
+
 
 for my $j ( 0 .. $#filein ) {
 	
@@ -156,84 +194,78 @@ for my $j ( 0 .. $#filein ) {
 	}
 	
 	foreach my $n ( @outevery ) {
-		if ( $j > 0 and ((( $j + 1 ) % $n) == 0 or $j == $#filein) ) {
-			my $outdp;
-            
-            if ( $incohout or $cohout ) {
-                my $FILEOUT = $fileavgdiffout . ($j+1);
-                open $outdp, '>:encoding(UTF-8)', $FILEOUT;
-#                if ( $j == $#filein ) {
-#                    my $FILEOUT = $fileavgdiffout . ($#filein + 1) . "final";
-#                    open $outdp, '>:encoding(UTF-8)', $FILEOUT;
-#                } else {
-#                    my $FILEOUT = $fileavgdiffout . ($j+1);
-#                    open $outdp, '>:encoding(UTF-8)', $FILEOUT;
-#                }
-            }
-            
-            printf $outdp "# Averaged diffraction pattern. Columns contain:\n";
-            printf $outdp "# 1 -> x pixel\n";
-            printf $outdp "# 2 -> y pixel\n";
-            printf $outdp "# 3 -> incohint\n";
-            printf $outdp "# 4 -> uincohint\n";
-            printf $outdp "# 5 -> cohint\n";
-            printf $outdp "# 6 -> ucohint\n";
-            
-			my @incohint = ();
-			my @uincohint = ();
-			my @stddevint = ();
-			my @intincohint = ();
-            
-			my @cohint = ();
-			my @ucohint = ();
-			my @intcohint = ();
-			my @stddevamp = ();
-			my @usumamp = ();
-			
-			my $tdsint;
-			my $utdsint;
-			my @inttdsint = ();
-			
-			# calculate incoherent and coherent avg
-			for my $ix ( 1 .. $#sumint ) {
-				for my $iy ( 1 .. $#{$sumint[$ix]} ) {
-					# incoherent avg
-					$incohint[$ix][$iy] = $sumint[$ix][$iy] / ($j+1);
-					$stddevint[$ix][$iy] = sqrt($Sincoh[$ix][$iy][1]/$j);
-					$uincohint[$ix][$iy] = sqrt(1/($j+1)) * $stddevint[$ix][$iy];
-					# coherent avg
-					$stddevamp[1] = sqrt($Scoh[$ix][$iy][1][1]/$j);
-					$stddevamp[2] = sqrt($Scoh[$ix][$iy][2][1]/$j);
-					$usumamp[1] = sqrt(1/($j+1)) * $stddevamp[1];
-					$usumamp[2] = sqrt(1/($j+1)) * $stddevamp[2];
-						
-                    
-                    if ( $incohout ) {
-                        printf $outdp "%4i %4i %1.12e %1.12e ", ($ix, $iy, $incohint[$ix][$iy], $uincohint[$ix][$iy]);
-                    } else {
-                        printf $outdp "%4i %4i # # ", ($ix, $iy);
-                    }
-                    
-                    if ( $cohout ) {
-					    $cohint[$ix][$iy] = ($sumamp[$ix][$iy][1]*$sumamp[$ix][$iy][1] + $sumamp[$ix][$iy][2]*$sumamp[$ix][$iy][2]) / (($j+1)**2);
-					    $ucohint[$ix][$iy] = sqrt(( 2*$sumamp[$ix][$iy][1]*$usumamp[1] )**2 + ( 2*$sumamp[$ix][$iy][2]*$usumamp[2] )**2) / (($j+1)**2);
-                        printf $outdp "%1.12e %1.12e \n", ($cohint[$ix][$iy], $ucohint[$ix][$iy]);
-                    } else {
-                        printf $outdp "# # \n";
-                    }
-                    
-#                    if ( $tdsout ) {
-#					    $tdsint = $incohint[$ix][$iy] - $cohint[$ix][$iy];
-#					    $utdsint = sqrt($uincohint[$ix][$iy]**2 + $ucohint[$ix][$iy]**2);
-#                        printf $outdp "%1.12e %1.12e\n", ($tdsint, $utdsint);
-#                    } else {
-#                        printf $outdp "# #\n";
-#                    }
-				}
-                printf $outdp "\n";
-			}
-			close ($outdp);
-		}
+		if ( !$log2 and $j > 0 and ((($j+1) % $n) == 0 or $j == $#filein) ) {
+            outputavg($j);
+		} elsif ($log2 and ($j+1) == $n) {
+            outputavg($j);
+        }
 	}
 }
 
+sub outputavg {
+    my $j = $_[0];
+
+	my $outdp;
+    
+    if ( $incohout or $cohout ) {
+        my $FILEOUT = $fileavgdiffout . ($j+1);
+        open $outdp, '>:encoding(UTF-8)', $FILEOUT;
+    }
+    
+    printf $outdp "# Averaged diffraction pattern. Columns contain:\n";
+    printf $outdp "# 1 -> x pixel\n";
+    printf $outdp "# 2 -> y pixel\n";
+    printf $outdp "# 3 -> incohint\n";
+    printf $outdp "# 4 -> uincohint\n";
+    printf $outdp "# 5 -> cohint\n";
+    printf $outdp "# 6 -> ucohint\n";
+    
+	my @incohint = ();
+	my @uincohint = ();
+	my @stddevint = ();
+	my @intincohint = ();
+    
+	my @cohint = ();
+	my @ucohint = ();
+	my @intcohint = ();
+	my @stddevamp = ();
+	my @usumamp = ();
+	
+	my $tdsint;
+	my $utdsint;
+	my @inttdsint = ();
+	
+	# calculate incoherent and coherent avg
+	for my $ix ( 1 .. $#sumint ) {
+		for my $iy ( 1 .. $#{$sumint[$ix]} ) {
+			# incoherent avg
+			$incohint[$ix][$iy] = $sumint[$ix][$iy] / ($j+1);
+			$stddevint[$ix][$iy] = sqrt($Sincoh[$ix][$iy][1]/$j);
+#			$uincohint[$ix][$iy] = sqrt(1/($j+1)) * $stddevint[$ix][$iy];
+			# coherent avg
+			$stddevamp[1] = sqrt($Scoh[$ix][$iy][1][1]/$j);
+			$stddevamp[2] = sqrt($Scoh[$ix][$iy][2][1]/$j);
+#			$usumamp[1] = sqrt(1/($j+1)) * $stddevamp[1];
+#			$usumamp[2] = sqrt(1/($j+1)) * $stddevamp[2];
+				
+            
+            if ( $incohout ) {
+#                printf $outdp "%4i %4i %1.12e %1.12e ", ($ix, $iy, $incohint[$ix][$iy], $uincohint[$ix][$iy]);
+                printf $outdp "%4i %4i %1.12e %1.12e ", ($ix, $iy, $incohint[$ix][$iy], $stddevint[$ix][$iy]);
+            } else {
+                printf $outdp "%4i %4i # # ", ($ix, $iy);
+            }
+            
+            if ( $cohout ) {
+			    $cohint[$ix][$iy] = ($sumamp[$ix][$iy][1]*$sumamp[$ix][$iy][1] + $sumamp[$ix][$iy][2]*$sumamp[$ix][$iy][2]) / (($j+1)**2);
+#			    $ucohint[$ix][$iy] = sqrt(( 2*$sumamp[$ix][$iy][1]*$usumamp[1] )**2 + ( 2*$sumamp[$ix][$iy][2]*$usumamp[2] )**2) / (($j+1)**2);
+			    $ucohint[$ix][$iy] = sqrt(( 2*$sumamp[$ix][$iy][1]*$stddevamp[1] )**2 + ( 2*$sumamp[$ix][$iy][2]*$stddevamp[2] )**2) / (($j+1)**2);
+                printf $outdp "%1.12e %1.12e \n", ($cohint[$ix][$iy], $ucohint[$ix][$iy]);
+            } else {
+                printf $outdp "# # \n";
+            }
+		}
+        printf $outdp "\n";
+	}
+	close ($outdp);
+}
