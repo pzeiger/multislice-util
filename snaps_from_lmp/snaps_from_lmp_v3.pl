@@ -20,6 +20,9 @@ my $setsymout = 0;
 my $trlcorr = 0;
 my $atomtype;
 my @atomtypes;
+my $randsamprange = 1;
+my $lmpsamp = 1;
+
 
 #my $snapcount = 1;
 #my $outevery = 1;
@@ -33,9 +36,14 @@ my $nsample = 1;
 # Loop over arguments and place them into arrays and vars for further use
 foreach my $i ( 0 .. $#ARGV ) {
     
+    # stop reading in atom matches or input files
+	if ( $ARGV[$i] =~ /^-/ ) {
+		$setin = 0;
+		$setatom = 0;
+	}
+    
     # Specify LAMMPS atom type. Currently supported: "full" and "atomic"
     if ( $ARGV[$i] =~ /^-atomstyle$/ ) {
-        ($setin, $setatom) = (0, 0,);
         $atomstyle = $ARGV[$i+1];
         if ( $atomstyle ne "full" and $atomstyle ne "atomic" ) {
             print "atom style $atomstyle not recognized.\n";
@@ -46,7 +54,7 @@ foreach my $i ( 0 .. $#ARGV ) {
     
     # Recognize which input file is to be used
     if ( $ARGV[$i] =~ /^-in$/ ) {
-        ($setin, $setatom) = (1, 0,);
+        $setin = 1;
         next;
     }
     
@@ -65,18 +73,17 @@ foreach my $i ( 0 .. $#ARGV ) {
     
     # Match atom type from lammps with nuclear charge and atom style
     if ( $ARGV[$i] =~ /^-matchatom$/ ) {
-        ($setin, $setatom) = (0, 1,);
-	if (defined $atomtype) {
-            $atomtype += 1;
+        $setatom = 1;
+        if (defined $atomtype) {
+            $atomtype += 1;           
         } else {
             $atomtype = 0;
-	}
+	    }
         next;
     }
     
     # Specify the unit of lenght in the input file. Currently supported are "angstrom" and "bohr"
     if ( $ARGV[$i] =~ /^-lengthunit$/ ) {
-        ($setin, $setatom) = (0, 0,);
         $lengthunit = $ARGV[$i+1];
         if ($lengthunit eq "angstrom" or $lengthunit eq "bohr") {
             print "Unit of length is set to $lengthunit\n";
@@ -89,35 +96,42 @@ foreach my $i ( 0 .. $#ARGV ) {
     
     # input centroid file for COM correction in output of PIMD simulation
     if ( $ARGV[$i] =~ /^-fcentroid$/ ) {
-        ($setin, $setatom) = (0, 0,);
         $centroidfile = $ARGV[$i+1];
+        next;
+    }
+    
+    # input centroid file for COM correction in output of PIMD simulation
+    if ( $ARGV[$i] =~ /^-lmpsamp$/ ) {
+        $lmpsamp = $ARGV[$i+1];
+        next;
+    }
+    
+    # input a number of time steps within the sampling is randomized
+    if ( $ARGV[$i] =~ /^-randsamprange$/ ) {
+        $randsamprange = $ARGV[$i+1];
         next;
     }
     
     # Specify operation mode. Currently supported: "pimd" and "clmd"
     if ( $ARGV[$i] =~ /^-mode$/ ) {
-        ($setin, $setatom) = (0, 0,);
         $mode = $ARGV[$i+1];
         next;
     }
     
     # specify that input file uses fractional coordinates
     if ( $ARGV[$i] =~ /^-fracin$/ ) {
-        ($setin, $setatom) = (0, 0,);
         $setfracin = 1;
         next;
     }
 
     # specify that input file uses fractional coordinates
     if ( $ARGV[$i] =~ /^-nofracout$/ ) {
-        ($setin, $setatom) = (0, 0,);
         $setfracout = 0;
         next;
     }
     
     # specify that simulation box in output file shall be symmetric around origin
     if ( $ARGV[$i] =~ /^-symout$/ ) {
-        ($setin, $setatom) = (0, 0,);
         $setsymout = 1;
         next;
     }
@@ -127,7 +141,6 @@ foreach my $i ( 0 .. $#ARGV ) {
     # environment information (non-position information) per time step
     # in lammps output
     if ( $ARGV[$i] =~ /^-format$/ ) {
-        ($setin, $setatom) = (0, 0,);
         $formatin = $ARGV[$i+1];
         if ($formatin eq "lmptrj") {
             $nhead = 8;
@@ -147,7 +160,6 @@ foreach my $i ( 0 .. $#ARGV ) {
     
     # Turn the center of mass (com) translation correction on (1) or off (all other values)
     if ( $ARGV[$i] =~ /^-trlcorr$/ ) {
-        ($setin, $setatom) = (0, 0,);
         print "COM translation correction turned on\n";
         $trlcorr = 1;
         next;
@@ -159,16 +171,14 @@ foreach my $i ( 0 .. $#ARGV ) {
         $setin = 0;
         next;
     }
+
+    # match atoms with atom numbers
     if ( $setatom == 1 ) {
-#	print "\n$ARGV[$i]\n";
-	if ($ARGV[$i] =~ /:\z/ ) {
+        if ($ARGV[$i] =~ /:\z/ ) {
             $atomtypes[$atomtype] = int(substr($ARGV[$i], 0, length($ARGV[$i])-1));
         } else {
             $atomlist{$ARGV[$i]} = $atomtypes[$atomtype];
-#	    print "$atomlist{$ARGV[$i]}\n";
-	}
-#	print "$atomtypes[$atomtype]\n";
-#	print "$atomtype\n\n";
+        }
         next;
     }
 }
@@ -270,6 +280,8 @@ else {
     }
 }
 
+my $nextsamp = $nfirst + drawrandomint(0, $randsamprange)*$lmpsamp;
+print "NEXTSAMP:$nextsamp\n\n";
 
 # Print all other snapshots to multislice input files
 while ( my $line = <$in> ) {
@@ -284,17 +296,44 @@ while ( my $line = <$in> ) {
     } elsif ($tstep > $nlast and $nlast > 0) {
 		print "time step not sampled\n";
         last;
-    } elsif ($tstep % $nsample != 0) {
+    } elsif ($tstep != $nextsamp) {
 		print "time step not sampled\n";
         next;
     }
     
+    # Determine next sampling step
+    $nextsamp = $nfirst + $nsample*int(($tstep-$nfirst)/$nsample+1);
+    $nextsamp = $nextsamp + (drawrandomint(0, $randsamprange)*$lmpsamp);
+    print "NEXTSAMP:$nextsamp\n\n";
+
+    # ---------------
+    # Sample snapshot
     my @snap = @$snap;
     my @dim = @$dim;
     
     my @ixyz = @$ixyz;
     
     my @comcorr = ();
+    
+    
+    # Calculate necessary center of mass correction
+    my @com;
+    if ( $mode !~ /pimd/ ) {
+            @com = determineCOM($snap,$natom,$ixyz);
+        }
+        else {
+            @com = determineCOM($centroid,$natom,$ixyz);
+    }
+    if ($trlcorr == 1) {
+        foreach my $d ( 0 .. $#com ) {
+            push @comcorr, ( $com[$d] - $com0[$d] );
+        }
+    }
+    else {
+        foreach my $d ( 0 .. $#com ) {
+            push @comcorr, 0;
+        }
+    }
     
     # correct for atoms reentering simulation box on the opposite site
     # due to periodic boundary conditions
@@ -323,29 +362,10 @@ while ( my $line = <$in> ) {
         print "@{$centroid[1]}\n";
     }
     
-    # Calculate necessary center of mass correction
-    my @com;
-    if ( $mode !~ /pimd/ ) {
-            @com = determineCOM($snap,$natom,$ixyz);
-        }
-        else {
-            @com = determineCOM($centroid,$natom,$ixyz);
-    }
-    
-    if ($trlcorr == 1) {
-        foreach my $d ( 0 .. $#com ) {
-            push @comcorr, ( $com[$d] - $com0[$d] );
-        }
-    }
-    else {
-        foreach my $d ( 0 .. $#com ) {
-            push @comcorr, 0;
-        }
-    }
     
     print "\nTIMESTEP: $tstep\n";
     print "CENTRE OF MASS: @com\n";
-    print "COMCORR: @comcorr\n";
+    print "COMCORR: @comcorr\n\n";
     
     my $fileout = "snapshot" . $tstep;
     open my $out,'>', $fileout;
@@ -367,6 +387,7 @@ while ( my $line = <$in> ) {
         if ( @{$_}[$ixyz[2]] > 1 ) {@{$_}[$ixyz[2]] -= 1;}
         
         
+        # center snapshot around the origin
         if ( $setsymout ) {
             @{$_}[$ixyz[0]] -= 0.5;
             @{$_}[$ixyz[1]] -= 0.5;
@@ -382,6 +403,8 @@ while ( my $line = <$in> ) {
         my $atomtype = @{$_}[$typecol];    
         printf $out "$atomlist{$atomtype} @{$_}[$ixyz[0]] @{$_}[$ixyz[1]] @{$_}[$ixyz[2]]\n";
     }
+    
+    # ---------------
 }
 
 
@@ -683,7 +706,6 @@ sub readTimestepData {
 
 
 # determine center of mass of a given snapshot
-
 sub determineCOM {
     # first argument contains reference name to array
     my $snap = $_[0];
@@ -709,4 +731,15 @@ sub determineCOM {
     
     return (@com);
 }
+
+
+# returns integer between [intlow, intup)
+sub drawrandomint {
+    my $intlo = $_[0];
+    my $intup = $_[1];
+
+    my $random = rand($intup-$intlo);
+    return int($random) + $intlo;
+}
+
 

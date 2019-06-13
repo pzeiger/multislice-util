@@ -159,6 +159,8 @@ if ( $setfort33 ) {
     printf $intout "# 4 -> uincohint\n";
     printf $intout "# 5 -> cohint\n";
     printf $intout "# 6 -> ucohint\n";
+    printf $intout "# 7 -> tdsint\n";
+    printf $intout "# 8 -> utdsint\n";
 }
 
 
@@ -261,7 +263,7 @@ for my $j ( 0 .. $#filein ) {
                         if ( $thetadet >= $innerdetang and $thetadet <= $outerdetang ) {
 #                            print "$count ok \n";
                             $count[$beamposx][$beamposy] += 1;
-                            $sumincoh[$beamposx][$beamposy] += $inp[2]*$inp[2] + $inp[3]*$inp[3];
+                            $sumincoh[$beamposx][$beamposy] += ($inp[2]*$inp[2] + $inp[3]*$inp[3]);
                             if ( $setroiout ) {
                                 printf $roiout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3];
                             }
@@ -278,7 +280,7 @@ for my $j ( 0 .. $#filein ) {
                             $usumincoh[$beamposx][$beamposy] += $inp[3]*$inp[3];
                             $sumcoh[$beamposx][$beamposy] += $inp[4];
                             $usumcoh[$beamposx][$beamposy] += $inp[5]*$inp[5];
-
+                            
                             $sumtds[$beamposx][$beamposy] += ($inp[2] - $inp[4]);
                             $usumtds[$beamposx][$beamposy] += ($inp[3]**2 + $inp[5]**2);
                             
