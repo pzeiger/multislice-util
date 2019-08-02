@@ -67,7 +67,6 @@ foreach my $i ( 0 .. $#ARGV ) {
 	# set all the calculation parameters
 	if ( $setin == 1 ) {
 		push @filein, $ARGV[$i];
-        print "$ARGV[$i]\n";
 		next;
 	}
 	if ( $setout == 1 ) {
@@ -81,22 +80,21 @@ foreach my $i ( 0 .. $#ARGV ) {
 @filein = sort by_snapnumber @filein;
 
 if ( !@outevery ) {
-	push @outevery, $#filein;
+	push @outevery, scalar @filein;
 }
 
 if ($log2) {
-    @outevery = (scalar @filein,);
+    @outevery = (scalar @filein);
     my $tmpvar = 2;
-    while ($tmpvar <= $#filein) {
+    while ($tmpvar < scalar @filein) {
         push @outevery, $tmpvar;
         $tmpvar = $tmpvar*2;
     }
 }
 
 # sort outevery array
-print Dumper(@outevery);
 @outevery = sort by_number @outevery;
-print Dumper(@outevery);
+#print Dumper(@outevery);
 
 my @sumint = ();
 my @sumamp = ();
@@ -106,6 +104,7 @@ my @Mcoh = ();
 my @Scoh = ();
 my $ixmax = 0;
 my $iymax = 0;
+my @header = ();
 
 
 for my $j ( 0 .. $#filein ) {
@@ -122,8 +121,10 @@ for my $j ( 0 .. $#filein ) {
 	while ( <$in> ) {
 		if ( $_ =~ /^\s$/ ) {
 			next;
-		}
-		else {
+        } elsif ( $_ =~ /^\#/) {
+            push @header, $_;
+            next;
+		} else {
 			push @inp, [ split /\s+/ ];
 			if ( $inp[$#inp][1] >= $ixmax ) {
 				$ixmax2 = $inp[$#inp][1];

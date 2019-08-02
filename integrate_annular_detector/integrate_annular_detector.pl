@@ -211,12 +211,20 @@ for my $j ( 0 .. $#filein ) {
         $beamposy = 0;
     }
     my $roiout;
+    my $roniout;
     if ( $setroiout ) {
         my $roifileout = $filein[$j] . '_detc' . $detcangx . '-' . $detcangy . '_cang' . $innerdetang . '-'. $outerdetang . '_roi';
         
         open $roiout, '>', $roifileout
             or do{
                 warn "Could not open file ${roifileout} $!\n";
+                next;
+            };
+        my $ronifileout = $filein[$j] . '_detc' . $detcangx . '-' . $detcangy . '_cang' . $innerdetang . '-'. $outerdetang . '_roni';
+        
+        open $roniout, '>', $ronifileout
+            or do{
+                warn "Could not open file ${ronifileout} $!\n";
                 next;
             };
     }
@@ -249,8 +257,9 @@ for my $j ( 0 .. $#filein ) {
 #                    print "thetay: ", $thetay, " ", $inp[1], "\n";
                     if ( $inp[0] > $ixmax and $ixmax ne 0 and $setroiout ) {
                          printf $roiout "\n";
+                         printf $roniout "\n";
                     }
-	            if ( $inp[0] > $ixmax ) {
+                    if ( $inp[0] > $ixmax ) {
                         $ixmax = $inp[0];
                     }
 #                    print "$thetax $detcangx $innerdetang \n";
@@ -266,10 +275,12 @@ for my $j ( 0 .. $#filein ) {
                             $sumincoh[$beamposx][$beamposy] += ($inp[2]*$inp[2] + $inp[3]*$inp[3]);
                             if ( $setroiout ) {
                                 printf $roiout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3];
+                                printf $roniout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], 0.0, 0.0;
                             }
                         } else {
                             if ( $setroiout ) {
                                 printf $roiout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], 0.0, 0.0;
+                                printf $roniout "%4i %4i %+1.12e %+1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3];
                             }
                         }
                     } else {
@@ -285,23 +296,30 @@ for my $j ( 0 .. $#filein ) {
                             $usumtds[$beamposx][$beamposy] += ($inp[3]**2 + $inp[5]**2);
                             
                             if ( $setroiout ) {
-                                print "$setroiout\n";
                                 printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5];
+                                printf $roniout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], 0.0, 0.0, 0.0, 0.0;
                             }
                         } else {
                             if ( $setroiout ) {
                                 printf $roiout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], 0.0, 0.0, 0.0, 0.0;
+                                printf $roniout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5];
                             }
                         }
                     }
+                } else {
+                    printf $roniout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5];
                 }
+            } else {
+                printf $roniout "%4i %4i %1.12e %1.12e %1.12e %1.12e\n", $inp[0], $inp[1], $inp[2], $inp[3], $inp[4], $inp[5];
             }
         }
     }
     
     if ( $setroiout ) {
         printf $roiout "\n";
+        printf $roniout "\n";
         close($roiout);
+        close($roniout);
     }
     
     if ( $setfort33 ) {

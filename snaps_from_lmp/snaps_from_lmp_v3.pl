@@ -13,7 +13,7 @@ my $in;
 my $lengthunit = "angstrom";
 my $mode = "clmd";
 my $nhead;
-my ($setin, $setatom) = (0, 0,);
+my ($setin, $setatom, $setdim) = (0, 0, 0);
 my $setfracin = 0;
 my $setfracout = 1;
 my $setsymout = 0;
@@ -22,7 +22,8 @@ my $atomtype;
 my @atomtypes;
 my $randsamprange = 1;
 my $lmpsamp = 1;
-
+my @boxdim = (-1, -1, -1);
+my $trajnum;
 
 #my $snapcount = 1;
 #my $outevery = 1;
@@ -40,6 +41,7 @@ foreach my $i ( 0 .. $#ARGV ) {
 	if ( $ARGV[$i] =~ /^-/ ) {
 		$setin = 0;
 		$setatom = 0;
+        $setdim = 0;
 	}
     
     # Specify LAMMPS atom type. Currently supported: "full" and "atomic"
@@ -48,6 +50,18 @@ foreach my $i ( 0 .. $#ARGV ) {
         if ( $atomstyle ne "full" and $atomstyle ne "atomic" ) {
             print "atom style $atomstyle not recognized.\n";
             die;
+        }
+        next;
+    }
+    
+    if ( $ARGV[$i] =~ /^-boxdim$/ ) {
+        $setdim = 1;
+        foreach my $j ( 0 .. 2 ){
+            if ( ! defined $ARGV[$i+$j+1] or $ARGV[$i+$j+1] =~ /^-/ ) {
+                last;
+            } else {
+                $boxdim[$j] = $ARGV[$i+$j+1];
+            }
         }
         next;
     }
@@ -100,7 +114,7 @@ foreach my $i ( 0 .. $#ARGV ) {
         next;
     }
     
-    # input centroid file for COM correction in output of PIMD simulation
+    # input sampling
     if ( $ARGV[$i] =~ /^-lmpsamp$/ ) {
         $lmpsamp = $ARGV[$i+1];
         next;
@@ -136,6 +150,16 @@ foreach my $i ( 0 .. $#ARGV ) {
         next;
     }
     
+    # Set trajectory number
+    if ( $ARGV[$i] =~ /^-trajnum$/ ) {
+        if ( ! defined $ARGV[$i+1] or $ARGV[$i+1] =~ /^-/ ) {
+            $trajnum = undef;
+        } else {
+            $trajnum = $ARGV[$i+1];
+            next;
+        }
+    }
+    
     # Specify the input format. Currently supported are "MD", "lmp" and "xyz"
     # Variable $nhead specifies the numebr of lines containing 
     # environment information (non-position information) per time step
@@ -151,6 +175,9 @@ foreach my $i ( 0 .. $#ARGV ) {
         } elsif ($formatin eq "ipixyz") {
             $nhead = 2;
             print "Input file format is ipixyz\n";
+        } elsif ($formatin eq "lmpxyz") {
+            $nhead = 2;
+            print "Input file format is lmpxyz\n";
         } else {
             print "Input file format not recognized\n";
             die;
@@ -171,7 +198,7 @@ foreach my $i ( 0 .. $#ARGV ) {
         $setin = 0;
         next;
     }
-
+    
     # match atoms with atom numbers
     if ( $setatom == 1 ) {
         if ($ARGV[$i] =~ /:\z/ ) {
@@ -183,7 +210,9 @@ foreach my $i ( 0 .. $#ARGV ) {
     }
 }
 
-#print Dumper(\%atomlist);
+print "$nfirst\n";
+print Dumper(\%atomlist);
+print Dumper(\@boxdim);
 #die;
 
 # Print some info and open pimd centroid file
@@ -198,11 +227,12 @@ if ( $mode =~ /pimd/ ) {
     print "Operating in CLMD mode\n";
 }
 
+
 # create initial structure array; if given use first snapshot of the
 # input file if not extra file ($ARGV[2]) is specified 
 
 my $line = <$in>;
-my ($tstep0, $natom0, $snap0, $dim0, $ixyz0, $typecol0) = readTimestepData($in,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle);
+my ($tstep0, $natom0, $snap0, $dim0, $ixyz0, $typecol0) = readTimestepData($in,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle,\@boxdim);
 
 my @snap0 = @$snap0;
 my @dim0 = @$dim0;
@@ -215,7 +245,7 @@ my $centroid;
 if ( $mode =~ /pimd/ && $trlcorr == 1 ) {
     my $line = <$centroidin>;
     
-    (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepDataMD($centroidin,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle);
+    (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepDataMD($centroidin,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle,\@boxdim);
     
     @centroid = @$centroid;
     
@@ -226,20 +256,15 @@ if ( $mode =~ /pimd/ && $trlcorr == 1 ) {
 
 # determine center of mass of the crystal structure
 my @com0;
-if ( $mode !~ /pimd/ ) {
-    @com0 = determineCOM($snap0,$natom0,$ixyz0);
+my $fileout;
+if (! defined $trajnum) {
+    $fileout = "snapshot" . $tstep0;
+} else {
+    $fileout = "snapshot" . $trajnum . "_" . $tstep0;
 }
-else {
-    @com0 = determineCOM($centroid,$natom0,$ixyz0);
-}
-
-print "\nTIMESTEP: $tstep0\n";
-print "CENTRE OF MASS: @com0\n";
+open my $out,'>', $fileout;
 
 if ( $mode !~ /pimd/ ) {
-    my $fileout = "snapshot" . $tstep0;
-    open my $out,'>', $fileout;
-    
     printf $out "%f %f %f\n", @dim0;
     printf $out "%i F\n", $natom0;
     foreach ( @snap0 ) {
@@ -251,27 +276,27 @@ if ( $mode !~ /pimd/ ) {
         if ( @{$_}[$ixyz0[0]] > 1 ) {@{$_}[$ixyz0[0]] -= 1;}
         if ( @{$_}[$ixyz0[1]] > 1 ) {@{$_}[$ixyz0[1]] -= 1;}
         if ( @{$_}[$ixyz0[2]] > 1 ) {@{$_}[$ixyz0[2]] -= 1;}
-        
-	if ( $setsymout ) {
+    }    
+    @com0 = determineCOM($snap0,$natom0,$ixyz0);
+    foreach ( @snap0 ) {
+        if ( $setsymout ) {
             @{$_}[$ixyz0[0]] -= 0.5;
             @{$_}[$ixyz0[1]] -= 0.5;
             @{$_}[$ixyz0[2]] -= 0.5;
-	}
+        }
         
-	if ( not $setfracout ) {
+        if ( not $setfracout ) {
             @{$_}[$ixyz0[0]] *= $dim0[0];
             @{$_}[$ixyz0[1]] *= $dim0[1];
             @{$_}[$ixyz0[2]] *= $dim0[2];
-	}
+        }
         
         my $atomtype = @{$_}[$typecol0];
         printf $out "%2i %3.16e %3.16e %3.16e\n", $atomlist{$atomtype}, @{$_}[$ixyz0[0]], @{$_}[$ixyz0[1]], @{$_}[$ixyz0[2]];
     }
-}
-else {
-    my $fileout = "snapshot" . $tstep0;
-    open my $out,'>', $fileout;
+} else {
     
+    @com0 = determineCOM($centroid,$natom0,$ixyz0);
     printf $out "%f %f %f\n", @dim0;
     printf $out "%i F\n", $natom0;
     foreach ( @centroid ) {
@@ -279,30 +304,44 @@ else {
         printf $out "$atomlist{$atomtype} @{$_}[$ixyz0[0]] @{$_}[$ixyz0[1]] @{$_}[$ixyz0[2]] \n";
     }
 }
+close($out);
 
-my $nextsamp = $nfirst + drawrandomint(0, $randsamprange)*$lmpsamp;
+print "\nTIMESTEP: $tstep0\n";
+print "CENTRE OF MASS: @com0\n";
+
+my $nextsamp;
+print "$nfirst $tstep0\n";
+if ($nfirst == $tstep0) {
+    $nextsamp = $nfirst + $nsample;
+} elsif (int($nfirst) < $tstep0) {
+    print "\$nfirst < \$tstep0. Check sampling range and range of time steps! Exiting...";
+    die;
+} else {
+    $nextsamp = $nfirst;
+}
+$nextsamp = $nextsamp + drawrandomint(0, $randsamprange)*$lmpsamp;
 print "NEXTSAMP:$nextsamp\n\n";
 
 # Print all other snapshots to multislice input files
 while ( my $line = <$in> ) {
     
-    my ($tstep, $natom, $snap, $dim, $ixyz, $typecol) = readTimestepData($in,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle);
+    my ($tstep, $natom, $snap, $dim, $ixyz, $typecol) = readTimestepData($in,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle,\@boxdim);
     
     if (not $tstep) {
         last;
     } elsif ($tstep < $nfirst) {
-		print "time step not sampled\n";
+		print "time step not sampled, \$tstep < \$nfirst\n";
         next;
     } elsif ($tstep > $nlast and $nlast > 0) {
-		print "time step not sampled\n";
+		print "time step not sampled \$tstep > \$nlast and \$nlast > 0\n";
         last;
     } elsif ($tstep != $nextsamp) {
-		print "time step not sampled\n";
+		print "time step not sampled \$tstep != \$nextsamp\n";
         next;
     }
     
     # Determine next sampling step
-    $nextsamp = $nfirst + $nsample*int(($tstep-$nfirst)/$nsample+1);
+    $nextsamp = $nfirst + $nsample*int(($tstep-$nfirst)/$nsample + 1);
     $nextsamp = $nextsamp + (drawrandomint(0, $randsamprange)*$lmpsamp);
     print "NEXTSAMP:$nextsamp\n\n";
 
@@ -316,27 +355,9 @@ while ( my $line = <$in> ) {
     my @comcorr = ();
     
     
-    # Calculate necessary center of mass correction
-    my @com;
-    if ( $mode !~ /pimd/ ) {
-            @com = determineCOM($snap,$natom,$ixyz);
-        }
-        else {
-            @com = determineCOM($centroid,$natom,$ixyz);
-    }
-    if ($trlcorr == 1) {
-        foreach my $d ( 0 .. $#com ) {
-            push @comcorr, ( $com[$d] - $com0[$d] );
-        }
-    }
-    else {
-        foreach my $d ( 0 .. $#com ) {
-            push @comcorr, 0;
-        }
-    }
-    
     # correct for atoms reentering simulation box on the opposite site
-    # due to periodic boundary conditions
+    # due to periodic boundary conditions -> necessary for translation 
+    # (COM) correction
     foreach my $i ( 0 .. $#snap ) {
         foreach my $j ( $ixyz[0] .. $ixyz[2] ) {
 #            print "@ixyz\n";
@@ -356,28 +377,31 @@ while ( my $line = <$in> ) {
     # In PIMD mode read centroid positions
     if ( $mode =~ /pimd/ ) {
         my $line = <$centroidin>;
-        (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle);
+        (my $tstep, my $natom, $centroid, my $dim, my $ixyz) = readTimestepData($centroidin,$line,$nhead,$formatin,$lengthunit,$setfracin,$atomstyle,\@boxdim);
         @centroid = @$centroid;
         
         print "@{$centroid[1]}\n";
     }
     
+    # Calculate necessary center of mass correction
+    my @com;
+    if ( $mode !~ /pimd/ ) {
+            @com = determineCOM($snap,$natom,$ixyz);
+    } else {
+            @com = determineCOM($centroid,$natom,$ixyz);
+    }
     
-    print "\nTIMESTEP: $tstep\n";
-    print "CENTRE OF MASS: @com\n";
-    print "COMCORR: @comcorr\n\n";
-    
-    my $fileout = "snapshot" . $tstep;
-    open my $out,'>', $fileout;
-    
-    printf $out "%f %f %f\n", @dim;
-    printf $out "%i F\n", $natom;
+    if ($trlcorr == 1) {
+        foreach my $d ( 0 .. $#com ) {
+            push @comcorr, ( $com[$d] - $com0[$d] );
+        }
+    } else {
+        foreach my $d ( 0 .. $#com ) {
+            push @comcorr, 0;
+        }
+    }
     
     foreach ( @snap ) {
-        @{$_}[$ixyz[0]] -= $comcorr[0];
-        @{$_}[$ixyz[1]] -= $comcorr[1];
-        @{$_}[$ixyz[2]] -= $comcorr[2];
-        
         if ( @{$_}[$ixyz[0]] < 0 ) {@{$_}[$ixyz[0]] += 1;}
         if ( @{$_}[$ixyz[1]] < 0 ) {@{$_}[$ixyz[1]] += 1;}
         if ( @{$_}[$ixyz[2]] < 0 ) {@{$_}[$ixyz[2]] += 1;}
@@ -385,7 +409,26 @@ while ( my $line = <$in> ) {
         if ( @{$_}[$ixyz[0]] > 1 ) {@{$_}[$ixyz[0]] -= 1;}
         if ( @{$_}[$ixyz[1]] > 1 ) {@{$_}[$ixyz[1]] -= 1;}
         if ( @{$_}[$ixyz[2]] > 1 ) {@{$_}[$ixyz[2]] -= 1;}
+    } 
         
+    print "\nTIMESTEP: $tstep\n";
+    print "CENTRE OF MASS: @com\n";
+    print "COMCORR: @comcorr\n\n";
+    
+    if (! defined $trajnum) {
+        $fileout = "snapshot" . $tstep;
+    } else {
+        $fileout = "snapshot" . $trajnum . "_" . $tstep;
+    }
+    open my $out,'>', $fileout;
+    print "Printing to file $fileout\n";
+    printf $out "%f %f %f\n", @dim;
+    printf $out "%i F\n", $natom;
+    
+    foreach ( @snap ) {
+        @{$_}[$ixyz[0]] -= $comcorr[0];
+        @{$_}[$ixyz[1]] -= $comcorr[1];
+        @{$_}[$ixyz[2]] -= $comcorr[2];
         
         # center snapshot around the origin
         if ( $setsymout ) {
@@ -403,7 +446,7 @@ while ( my $line = <$in> ) {
         my $atomtype = @{$_}[$typecol];    
         printf $out "$atomlist{$atomtype} @{$_}[$ixyz[0]] @{$_}[$ixyz[1]] @{$_}[$ixyz[2]]\n";
     }
-    
+    close($out);
     # ---------------
 }
 
@@ -428,7 +471,7 @@ while ( my $line = <$in> ) {
 #    ------END FILE ------
 #
 #
-# 2. xyz file
+# 2. ipixyz file
 #    ------BEGIN FILE------
 #    34680
 #    # CELL(abcABC):  117.96804   115.78541   567.22963    90.00000    90.00000    90.00000  cell{atomic_unit}  Traj: positions{atomic_unit} Step:           0  Bead:       0 
@@ -436,8 +479,18 @@ while ( my $line = <$in> ) {
 #    Gd  3.93252e+00  0.00000e+00  5.56146e+00
 #    ...
 #    ------END FILE ------
+#
 #   
-#   
+# 2. lmpxyz file
+#    ------BEGIN FILE------
+#    34680
+#    Atoms. Timestep:       0
+#    Gd  0.00000e+00  0.00000e+00  0.00000e+00
+#    Gd  3.93252e+00  0.00000e+00  5.56146e+00
+#    ...
+#    ------END FILE ------
+#
+#
 # 3. lmp lammps datafile
 #    ------BEGIN FILE------
 #    Multilayered hBN 12x21x45
@@ -472,7 +525,9 @@ sub readTimestepData {
     my $lengthunit = $_[4];
     my $fractional = $_[5];
     my $atomstyle = $_[6];
+    my $boxdim = $_[7];
     
+    my @boxdim = @$boxdim;
     
     # arrays for unit cell dimensions, atom data and temporary auxiliary purposes
     my ($tstep, $natom);
@@ -553,7 +608,7 @@ sub readTimestepData {
                 push @snap, [ @tmp ];
             }
             
-        } elsif ( $formatin =~ /xyz/ ) {
+        } elsif ( $formatin =~ /ipixyz/ ) {
             
             foreach my $i (1 .. ($nhead-1)) {
                 $line = <$in>;
@@ -573,6 +628,29 @@ sub readTimestepData {
 			if ($tmp[13] =~ /cell{atomic_unit}/) {
 				$cellunit = "bohr";
 			}
+            foreach (1 .. $natom) {
+                $line = <$in>;
+                chomp($line);
+                push @snap, [split ' ', $line];
+            }
+            
+            # 2nd, 3rd, and 4th column contain the x-, y- and z-positions
+			$typecol = 0;
+            @ixyz = (1, 2, 3);
+            
+        } elsif ( $formatin =~ /lmpxyz/ ) {
+            
+            foreach my $i (1 .. ($nhead-1)) {
+                $line = <$in>;
+                chomp($line);
+                $head{$i} = $line;
+#            print "$i $head{$i} \n";
+            }
+            
+            $natom = (split ' ', $head{0})[0];
+            my @tmp = split ' ', $head{1};
+            $tstep = $tmp[2];
+            
             foreach (1 .. $natom) {
                 $line = <$in>;
                 chomp($line);
@@ -658,6 +736,12 @@ sub readTimestepData {
                 $snap[$i][$ixyz[0]] -= $head{'xlo'};
                 $snap[$i][$ixyz[1]] -= $head{'ylo'};
                 $snap[$i][$ixyz[2]] -= $head{'zlo'};
+            }
+        }
+        
+        foreach my $i (0 .. 2) {
+            if ($boxdim[$i] ne -1) {
+                $dim[$i] = $boxdim[$i];
             }
         }
         
